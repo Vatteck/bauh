@@ -43,7 +43,18 @@ class BauhApi:
         if not icon_url.startswith(('data:', 'http://', 'https://')):
             local_path = icon_url[7:] if icon_url.startswith('file://') else icon_url
             import os
-            return icon_url if os.path.isfile(local_path) else ''
+            if os.path.isfile(local_path):
+                try:
+                    import base64
+                    import mimetypes
+                    mime_type, _ = mimetypes.guess_type(local_path)
+                    mime_type = mime_type or 'image/png'
+                    with open(local_path, "rb") as f:
+                        b64_data = base64.b64encode(f.read()).decode('utf-8')
+                        return f"data:{mime_type};base64,{b64_data}"
+                except Exception as e:
+                    self.logger.warning(f"Could not load local icon {local_path}: {e}")
+            return ''
         return icon_url
 
     def _serialize_pkg(self, pkg) -> dict:
