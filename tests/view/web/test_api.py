@@ -1,6 +1,8 @@
 import unittest
+import json
 from unittest.mock import Mock, patch, mock_open
 from bauh.view.web.api import BauhApi
+
 
 class BauhApiOrphansTest(unittest.TestCase):
     def setUp(self):
@@ -247,4 +249,23 @@ class BauhApiExportImportTest(unittest.TestCase):
         self.assertEqual(res['data']['skipped'], 0)
         self.assertEqual(res['data']['failed'], [])
         self.manager.install.assert_called_once_with(candidate, root_password=None, disk_loader=None, handler=mock_watcher_cls.return_value)
+
+    @patch('bauh.view.web.api.read_manifest')
+    def test_import_packages_invalid_entries_skipped(self, mock_read):
+        # Manifest list has strings and None, plus one valid entry which is already installed
+        mock_read.return_value = ["invalid_str", None, {'name': 'test-pkg', 'type': 'Flatpak'}]
+        
+        pkg = Mock()
+        pkg.name = "test-pkg"
+        
+        installed_res = Mock()
+        installed_res.installed = [pkg]
+        self.manager.read_installed.return_value = installed_res
+        
+        res = self.api.import_packages()
+        self.assertEqual(res['status'], 'ok')
+        self.assertEqual(res['data']['installed'], 0)
+        self.assertEqual(res['data']['skipped'], 1)
+        self.assertEqual(res['data']['failed'], [])
+
 

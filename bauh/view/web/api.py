@@ -428,6 +428,8 @@ class BauhApi:
             to_install = []
             skipped_count = 0
             for p in manifest_pkgs:
+                if not isinstance(p, dict):
+                    continue
                 name = p.get('name')
                 if not name:
                     continue

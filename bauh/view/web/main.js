@@ -788,26 +788,45 @@ document.getElementById('import-btn').addEventListener('click', async () => {
     }
 });
 
+function activateView(viewName) {
+    navItems.forEach(n => n.classList.remove('active'));
+    const btn = document.querySelector(`.nav-item[data-view="${viewName}"]`);
+    if (btn) {
+        btn.classList.add('active');
+    }
+    
+    currentView = viewName;
+    searchInput.value = ''; // clear search on view change
+    
+    if (viewName === 'settings') {
+        packagesGrid.innerHTML = '';
+        emptyState.classList.add('hidden');
+        loadingState.classList.add('hidden');
+        packagesGrid.style.display = 'block';
+        packagesGrid.innerHTML = '<div style="padding: 32px; color: var(--text-secondary);">Settings module not yet implemented in Web UI.</div>';
+    } else {
+        fetchPackages();
+    }
+}
+
 navItems.forEach(item => {
     item.addEventListener('click', (e) => {
         const btn = e.currentTarget;
-        navItems.forEach(n => n.classList.remove('active'));
-        btn.classList.add('active');
-        
-        currentView = btn.getAttribute('data-view');
-        searchInput.value = ''; // clear search on view change
-        
-        if (currentView === 'settings') {
-            packagesGrid.innerHTML = '';
-            emptyState.classList.add('hidden');
-            loadingState.classList.add('hidden');
-            packagesGrid.style.display = 'block';
-            packagesGrid.innerHTML = '<div style="padding: 32px; color: var(--text-secondary);">Settings module not yet implemented in Web UI.</div>';
-        } else {
-            fetchPackages();
-        }
+        const viewName = btn.getAttribute('data-view');
+        activateView(viewName);
     });
 });
+
+const shortcutsHelpBtn = document.getElementById('shortcuts-help-btn');
+if (shortcutsHelpBtn) {
+    shortcutsHelpBtn.addEventListener('click', () => {
+        showToast(
+            'Keyboard Shortcuts',
+            '/ Search  •  Esc Clear/Close  •  Ctrl+H Home  •  Ctrl+I Installed  •  Ctrl+U Updates  •  Ctrl+A Activity  •  Ctrl+D Disk  •  Ctrl+Shift+U Update All  •  Ctrl+E Export',
+            'info'
+        );
+    });
+}
 
 // Event delegation for disk package rows
 packagesGrid.addEventListener('click', (e) => {
@@ -910,3 +929,117 @@ setTimeout(() => {
         fetchPackages();
     }
 }, 1000);
+
+// Global Keyboard Shortcuts
+document.addEventListener('keydown', (e) => {
+    const activeEl = document.activeElement;
+    const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.isContentEditable
+    );
+
+    const key = e.key;
+    const ctrlKey = e.ctrlKey || e.metaKey; // Treat CMD key on macOS like Ctrl
+    const shiftKey = e.shiftKey;
+
+    // / pressed and not in input: focus search
+    if (key === '/' && !isInput) {
+        e.preventDefault();
+        if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+        }
+        return;
+    }
+
+    // Escape pressed: context-aware close / clear
+    if (key === 'Escape') {
+        // 1. Close detail modal if open
+        if (detailModal && !detailModal.classList.contains('hidden')) {
+            detailModal.classList.add('hidden');
+            return;
+        }
+
+        // 2. Close terminal panel if open and not busy
+        const terminalPanel = document.getElementById('terminal-panel');
+        const terminalOverlay = document.getElementById('terminal-overlay');
+        if (terminalPanel && !terminalPanel.classList.contains('hidden') && !operationInProgress) {
+            terminalPanel.classList.add('hidden');
+            if (terminalOverlay) {
+                terminalOverlay.classList.add('hidden');
+            }
+            fetchPackages();
+            return;
+        }
+
+        // 3. Deactivate select mode if active
+        if (selectMode) {
+            toggleSelectMode(false);
+            return;
+        }
+
+        // 4. Clear search input if not empty
+        if (searchInput && searchInput.value) {
+            searchInput.value = '';
+            fetchPackages();
+            return;
+        }
+    }
+
+    // Ctrl+H: Home/Dashboard
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'h' && !isInput) {
+        e.preventDefault();
+        activateView('dashboard');
+        return;
+    }
+
+    // Ctrl+I: Installed
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'i' && !isInput) {
+        e.preventDefault();
+        activateView('installed');
+        return;
+    }
+
+    // Ctrl+U: Updates
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'u' && !isInput) {
+        e.preventDefault();
+        activateView('updates');
+        return;
+    }
+
+    // Ctrl+A: Activity (only when not typing in an input)
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'a' && !isInput) {
+        e.preventDefault();
+        activateView('activity');
+        return;
+    }
+
+    // Ctrl+D: Disk Usage
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'd' && !isInput) {
+        e.preventDefault();
+        activateView('disk');
+        return;
+    }
+
+    // Ctrl+Shift+U: Update All
+    if (ctrlKey && shiftKey && key.toLowerCase() === 'u' && !isInput) {
+        e.preventDefault();
+        const updateAllBtn = document.getElementById('update-all-btn');
+        if (updateAllBtn && !updateAllBtn.classList.contains('hidden')) {
+            updateAllBtn.click();
+        }
+        return;
+    }
+
+    // Ctrl+E: Export
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'e' && !isInput) {
+        e.preventDefault();
+        const exportBtn = document.getElementById('export-btn');
+        if (exportBtn) {
+            exportBtn.click();
+        }
+        return;
+    }
+});
