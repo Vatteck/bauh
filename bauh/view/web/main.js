@@ -25,6 +25,17 @@ themeToggleBtn.addEventListener('click', () => {
     localStorage.setItem('bauh-theme', newTheme);
 });
 
+// HTML escaping helper to prevent XSS / Local RCE
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // Toast Notifications
 const toastContainer = document.getElementById('toast-container');
 
@@ -80,6 +91,7 @@ const modalClose = document.getElementById('modal-close');
 const modalBackdrop = detailModal.querySelector('.modal-backdrop');
 
 let currentPackages = [];
+let diskPackages = [];
 let currentView = 'dashboard'; // 'dashboard', 'installed', 'updates', 'activity'
 
 let selectMode = false;
@@ -424,6 +436,129 @@ updateAllBtn.addEventListener('click', async () => {
     }
 });
 
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 B';
+    const k = 1000;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['B', 'kB', 'MB', 'GB', 'TB', 'PB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+async function renderDiskView() {
+    packagesGrid.style.display = 'none';
+    loadingState.classList.remove('hidden');
+    emptyState.classList.add('hidden');
+
+    const data = await pyApiCall('get_disk_usage');
+    loadingState.classList.add('hidden');
+
+    if (!data) {
+        packagesGrid.style.display = 'block';
+        packagesGrid.innerHTML = '<div style="padding: 32px; color: var(--text-secondary); text-align: center;">Error loading disk usage data.</div>';
+        return;
+    }
+
+    const { packages, by_type } = data;
+    diskPackages = packages || []; // Store globally for event delegation click listener
+
+    if (diskPackages.length === 0) {
+        packagesGrid.style.display = 'block';
+        packagesGrid.innerHTML = '<div style="padding: 32px; color: var(--text-secondary); text-align: center;">No packages found with disk usage information.</div>';
+        return;
+    }
+
+    packagesGrid.style.display = 'block';
+    
+    // Calculate total bytes
+    const totalBytes = by_type.reduce((acc, curr) => acc + curr.total_bytes, 0);
+    const totalHuman = formatBytes(totalBytes);
+
+    let html = `
+        <div class="disk-view-container">
+            <div class="disk-summary-card">
+                <div class="disk-summary-title">Total Managed Disk Usage</div>
+                <div class="disk-summary-value">${escapeHtml(totalHuman)}</div>
+                
+                <div class="disk-chart-container">
+                    <div class="disk-bar-track">
+    `;
+
+    const typeColors = {
+        'flatpak': '#38bdf8',
+        'snap': '#f43f5e',
+        'appimage': '#a855f7',
+        'aur': '#f59e0b',
+        'web': '#10b981',
+        'unknown': '#64748b'
+    };
+
+    const getColorForType = (type) => {
+        const t = type.toLowerCase();
+        return typeColors[t] || '#6366f1';
+    };
+
+    // Render bar segments
+    by_type.forEach(item => {
+        const percentage = totalBytes > 0 ? ((item.total_bytes / totalBytes) * 100).toFixed(1) : 0;
+        if (percentage > 0) {
+            const color = getColorForType(item.type);
+            html += `<div class="disk-bar-fill" style="width: ${percentage}%; background-color: ${color};" title="${escapeHtml(item.type)}: ${escapeHtml(item.total_human)} (${percentage}%)"></div>`;
+        }
+    });
+
+    html += `
+                    </div>
+                </div>
+                
+                <div class="disk-legend">
+    `;
+
+    by_type.forEach(item => {
+        const percentage = totalBytes > 0 ? ((item.total_bytes / totalBytes) * 100).toFixed(1) : 0;
+        const color = getColorForType(item.type);
+        html += `
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: ${color};"></span>
+                <span class="legend-label">${escapeHtml(item.type)}</span>
+                <span class="legend-value">${escapeHtml(item.total_human)} (${percentage}%)</span>
+            </div>
+        `;
+    });
+
+    html += `
+                </div>
+            </div>
+            
+            <div class="disk-packages-section">
+                <div class="disk-section-title">Package Breakdown</div>
+                <div class="disk-packages-list">
+    `;
+
+    diskPackages.forEach(pkg => {
+        const color = getColorForType(pkg.type);
+        html += `
+            <div class="disk-package-row" data-id="${escapeHtml(pkg.id)}">
+                <div class="disk-package-left">
+                    <span class="disk-package-name" title="${escapeHtml(pkg.name)}">${escapeHtml(pkg.name)}</span>
+                    <span class="disk-package-tag" style="background-color: ${color}20; color: ${color}; border: 1px solid ${color}40;">${escapeHtml(pkg.type)}</span>
+                </div>
+                <div class="disk-package-right">
+                    <span class="disk-package-size">${escapeHtml(pkg.size_human)}</span>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `
+                </div>
+            </div>
+        </div>
+    `;
+
+    packagesGrid.innerHTML = html;
+}
+
 // Render Chronological Activity Log
 async function renderActivityFeed() {
     packagesGrid.innerHTML = '';
@@ -496,6 +631,9 @@ async function fetchPackages() {
         } else if (currentView === 'activity') {
             loadingState.classList.add('hidden');
             renderActivityFeed();
+            return;
+        } else if (currentView === 'disk') {
+            renderDiskView();
             return;
         } else {
             results = await pyApiCall('get_suggestions', type);
@@ -583,6 +721,26 @@ navItems.forEach(item => {
     });
 });
 
+// Event delegation for disk package rows
+packagesGrid.addEventListener('click', (e) => {
+    const row = e.target.closest('.disk-package-row');
+    if (row) {
+        const pkgId = row.dataset.id;
+        const pkg = diskPackages.find(p => p.id === pkgId);
+        if (pkg) {
+            openDetailModal({
+                id: pkg.id,
+                name: pkg.name,
+                type: pkg.type,
+                icon_url: '',
+                description: '',
+                installed: true,
+                update_available: false
+            });
+        }
+    }
+});
+
 // Initialization hook when pywebview is ready
 window.addEventListener('pywebviewready', function() {
     console.log("pywebview is ready!");
@@ -622,7 +780,22 @@ const mockApi = {
     uninstall: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 1000)); },
     update: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 1000)); },
     batch_uninstall: async (ids) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 1500)); },
-    update_all: async () => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 2000)); }
+    update_all: async () => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 2000)); },
+    get_disk_usage: async () => {
+        return {
+            packages: [
+                { id: 'app1', name: 'Firefox', type: 'Flatpak', size_bytes: 350000000, size_human: '350.00 MB' },
+                { id: 'app2', name: 'Spotify', type: 'Snap', size_bytes: 180000000, size_human: '180.00 MB' },
+                { id: 'app3', name: 'Discord', type: 'AUR', size_bytes: 120000000, size_human: '120.00 MB' },
+                { id: 'app4', name: 'Steam', type: 'Flatpak', size_bytes: 850000000, size_human: '850.00 MB' }
+            ],
+            by_type: [
+                { type: 'Flatpak', total_bytes: 1200000000, total_human: '1.20 GB' },
+                { type: 'Snap', total_bytes: 180000000, total_human: '180.00 MB' },
+                { type: 'AUR', total_bytes: 120000000, total_human: '120.00 MB' }
+            ]
+        };
+    }
 };
 
 // Fallback initialization if pywebview event doesn't fire within 1s

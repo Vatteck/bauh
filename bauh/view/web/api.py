@@ -3,6 +3,7 @@ import threading
 import traceback
 from typing import List, Optional
 
+from bauh.commons.view_utils import get_human_size_str
 from bauh.view.core.controller import GenericSoftwareManager
 from bauh.view.web.watcher import WebviewWatcher
 from bauh.view.web.activity_log import record_activity, get_activity_log
@@ -296,4 +297,66 @@ class BauhApi:
         except Exception as e:
             self.logger.error(f"Error fetching activity log: {e}")
             return {'status': 'error', 'message': str(e)}
+
+    def get_disk_usage(self) -> dict:
+        try:
+            self.logger.info("get_disk_usage called")
+
+            result = self.manager.read_installed()
+            pkgs = result.installed or []
+            self.manager.fill_sizes(pkgs)
+
+            pkg_sizes = []
+            by_type = {}
+
+            with self._registry_lock:
+                for pkg in pkgs:
+                    self.pkg_registry[str(id(pkg))] = pkg
+
+            for pkg in pkgs:
+                pkg_id = str(id(pkg))
+
+                try:
+                    pkg_type = pkg.get_type() or pkg.gem_name
+                except Exception:
+                    pkg_type = pkg.gem_name or 'unknown'
+
+                size_bytes = pkg.size if pkg.size is not None else 0
+                size_human = get_human_size_str(size_bytes) or '0 B'
+
+                pkg_sizes.append({
+                    'id': pkg_id,
+                    'name': pkg.name or '',
+                    'type': pkg_type,
+                    'size_bytes': size_bytes,
+                    'size_human': size_human,
+                })
+
+                by_type[pkg_type] = by_type.get(pkg_type, 0) + size_bytes
+
+            # Sort packages descending by size in bytes
+            pkg_sizes.sort(key=lambda p: p['size_bytes'], reverse=True)
+
+            # Sort package types descending by total bytes
+            type_summary = []
+            for t, total_bytes in by_type.items():
+                type_summary.append({
+                    'type': t,
+                    'total_bytes': total_bytes,
+                    'total_human': get_human_size_str(total_bytes) or '0 B'
+                })
+            type_summary.sort(key=lambda x: x['total_bytes'], reverse=True)
+
+            return {
+                'status': 'ok',
+                'data': {
+                    'packages': pkg_sizes,
+                    'by_type': type_summary
+                }
+            }
+        except Exception as e:
+            self.logger.error(f"Error fetching disk usage: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
 
