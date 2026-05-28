@@ -39,6 +39,8 @@ class BauhApi:
     def _serialize_pkg(self, pkg) -> dict:
         pkg_id = str(id(pkg))
         with self._registry_lock:
+            if len(self.pkg_registry) > 2000:
+                self.pkg_registry.clear()
             self.pkg_registry[pkg_id] = pkg
         
         try:
@@ -95,6 +97,19 @@ class BauhApi:
             self.logger.error(f"Error fetching installed packages: {e}")
             traceback.print_exc()
             return {'status': 'error', 'message': str(e)}
+
+    def get_orphans(self) -> dict:
+        try:
+            self.logger.info("get_orphans called")
+            result = self.manager.read_installed()
+            pkgs = result.installed or []
+            orphans = [p for p in pkgs if hasattr(p, 'orphan') and p.orphan]
+            return {'status': 'ok', 'data': [self._serialize_pkg(p) for p in orphans]}
+        except Exception as e:
+            self.logger.error(f"Error fetching orphan packages: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
 
     def get_updates(self, pkg_type: str = 'all') -> dict:
         try:

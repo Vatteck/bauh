@@ -55,8 +55,8 @@ function showToast(title, message, type = 'info') {
     toast.innerHTML = `
         ${iconSvg}
         <div class="toast-content">
-            <div class="toast-title">${title}</div>
-            <div class="toast-message">${message}</div>
+            <div class="toast-title">${escapeHtml(title)}</div>
+            <div class="toast-message">${escapeHtml(message)}</div>
         </div>
     `;
 
@@ -85,6 +85,7 @@ const batchCount = document.getElementById('batch-count');
 const batchUninstallBtn = document.getElementById('batch-uninstall-btn');
 const batchCancelBtn = document.getElementById('batch-cancel-btn');
 const updateAllBtn = document.getElementById('update-all-btn');
+const cleanupOrphansBtn = document.getElementById('cleanup-orphans-btn');
 
 const detailModal = document.getElementById('detail-modal');
 const modalClose = document.getElementById('modal-close');
@@ -217,16 +218,16 @@ function renderPackages(packages) {
         card.innerHTML = `
             <div class="package-header">
                 <input type="checkbox" class="pkg-checkbox" ${isChecked} onclick="event.stopPropagation();">
-                <img src="${pkg.icon_url || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}" class="package-icon" alt="${pkg.name} icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}">
+                <img src="${pkg.icon_url || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}" class="package-icon" alt="${escapeHtml(pkg.name)} icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}">
                 <div class="package-info">
-                    <h3 class="package-title" title="${pkg.name}">${pkg.name}</h3>
+                    <h3 class="package-title" title="${escapeHtml(pkg.name)}">${escapeHtml(pkg.name)}</h3>
                     <div class="package-publisher">
-                        ${pkg.publisher || 'Unknown Publisher'} • v${pkg.version || 'Unknown'}
+                        ${escapeHtml(pkg.publisher || 'Unknown Publisher')} • v${escapeHtml(pkg.version || 'Unknown')}
                     </div>
                 </div>
             </div>
             <div class="package-description">
-                ${pkg.description || 'No description available for this package.'}
+                ${escapeHtml(pkg.description || 'No description available for this package.')}
             </div>
             <div class="package-footer">
                 <div class="package-tags">
@@ -427,12 +428,50 @@ batchCancelBtn.addEventListener('click', () => {
 });
 
 updateAllBtn.addEventListener('click', async () => {
+    if (operationInProgress) { showToast('Busy', 'Another operation is already running', 'warning'); return; }
     showToast('Updating All', 'Starting system packages upgrade...', 'info');
     const result = await pyApiCall('update_all');
     if (result && result.success) {
         showToast('Success', 'System upgrade finished', 'success');
     } else {
         showToast('Error', result ? result.error : 'Bulk upgrade failed', 'error');
+    }
+});
+
+async function checkOrphans() {
+    const orphans = await pyApiCall('get_orphans');
+    if (orphans && orphans.length > 0) {
+        cleanupOrphansBtn.classList.remove('hidden');
+        cleanupOrphansBtn.innerHTML = `
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6l-1 14H6L5 6"></path>
+                <path d="M10 11v6M14 11v6"></path>
+            </svg>
+            Cleanup ${escapeHtml(orphans.length)} Orphan${orphans.length > 1 ? 's' : ''}
+        `;
+        cleanupOrphansBtn.dataset.orphanIds = JSON.stringify(orphans.map(pkg => pkg.id));
+    } else {
+        cleanupOrphansBtn.classList.add('hidden');
+    }
+}
+
+cleanupOrphansBtn.addEventListener('click', async () => {
+    if (operationInProgress) { showToast('Busy', 'Another operation is already running', 'warning'); return; }
+    const rawIds = cleanupOrphansBtn.dataset.orphanIds;
+    if (!rawIds) return;
+    const ids = JSON.parse(rawIds);
+    if (!ids || ids.length === 0) return;
+    
+    showToast('Orphan Cleanup', "Removing " + ids.length + " orphaned package(s)...", 'info');
+    
+    const result = await pyApiCall('batch_uninstall', ids);
+    if (result && result.success) {
+        showToast('Success', 'Orphaned packages removed successfully', 'success');
+        cleanupOrphansBtn.classList.add('hidden');
+        fetchPackages();
+    } else {
+        showToast('Error', result ? result.error : 'Orphan cleanup failed', 'error');
     }
 });
 
@@ -590,9 +629,9 @@ async function renderActivityFeed() {
             <div class="activity-icon ${iconClass}">${iconChar}</div>
             <div class="activity-body">
                 <span class="activity-action ${act.action}">${actionLabel}</span>
-                <span class="activity-pkg">${act.pkg_name}</span>
+                <span class="activity-pkg">${escapeHtml(act.pkg_name)}</span>
                 <span style="color: var(--text-secondary);">(${act.pkg_type})</span>
-                ${!isSuccess && act.error ? `<span style="color: var(--status-danger); margin-left: 8px;">— ${act.error}</span>` : ''}
+                ${!isSuccess && act.error ? `<span style="color: var(--status-danger); margin-left: 8px;">— ${escapeHtml(act.error)}</span>` : ''}
             </div>
             <div class="activity-time">${timeStr}</div>
         `;
@@ -608,6 +647,7 @@ async function fetchPackages() {
     emptyState.classList.add('hidden');
     loadingState.classList.remove('hidden');
     updateAllBtn.classList.add('hidden'); // hidden by default
+    cleanupOrphansBtn.classList.add('hidden'); // hidden by default
 
     // If batch mode was active, cancel it before view changes or search queries
     if (selectMode) {
@@ -623,6 +663,7 @@ async function fetchPackages() {
     } else {
         if (currentView === 'installed') {
             results = await pyApiCall('get_installed', type);
+            checkOrphans();
         } else if (currentView === 'updates') {
             results = await pyApiCall('get_updates', type);
             if (results && results.length > 0) {
@@ -760,6 +801,9 @@ const mockApi = {
     get_installed: async () => [
         { id: 'app2', name: 'Spotify', publisher: 'Spotify', version: '1.2.0', type: 'Snap', description: 'Music streaming service.', installed: true },
         { id: 'app3', name: 'Discord', publisher: 'Discord', version: '0.0.28', type: 'AUR', description: 'Chat for Gamers.', installed: true, update_available: true }
+    ],
+    get_orphans: async () => [
+        { id: 'orphan1', name: 'Mock Orphan Package', publisher: 'Mock Dev', version: '1.0', type: 'Flatpak', description: 'An unused orphaned package.', installed: true, orphan: true }
     ],
     get_updates: async () => [
         { id: 'app3', name: 'Discord', publisher: 'Discord', version: '0.0.28', type: 'AUR', description: 'Chat for Gamers.', installed: true, update_available: true }
