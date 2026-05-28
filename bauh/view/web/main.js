@@ -102,8 +102,18 @@ let operationInProgress = false;
 let packageCache = {};
 
 function getCacheKey(view, type, query) {
-    return `${view}_${type}_${query}`;
+    return `${view}\0${type}\0${query}`;
 }
+
+const MAX_CACHE_ENTRIES = 30;
+function writeToCache(key, data) {
+    const keys = Object.keys(packageCache);
+    if (keys.length >= MAX_CACHE_ENTRIES) {
+        delete packageCache[keys[0]]; // FIFO eviction
+    }
+    packageCache[key] = data;
+}
+
 
 // Function to call Python backend methods
 async function pyApiCall(methodName, ...args) {
@@ -691,7 +701,7 @@ async function fetchPackages() {
     }
 
     if (currentView !== 'activity' && currentView !== 'disk') {
-        packageCache[cacheKey] = results || [];
+        writeToCache(cacheKey, results || []);
     }
 
     loadingState.classList.add('hidden');
@@ -707,36 +717,60 @@ async function fetchPackages() {
 // Action Handlers
 window.installApp = async (id, btn = null) => {
     if (btn) btn.classList.add('loading');
+    operationInProgress = true; // Synch lock
     showToast('Installing', 'Installation started in background', 'info');
-    const result = await pyApiCall('install', id);
-    if (result && result.success) {
-        showToast('Success', 'Application installed successfully', 'success');
-    } else {
-        showToast('Error', result ? result.error : 'Installation failed', 'error');
+    try {
+        const result = await pyApiCall('install', id);
+        if (result && result.success) {
+            showToast('Success', 'Application installed successfully', 'success');
+            packageCache = {}; // Wipe cache
+        } else {
+            operationInProgress = false; // Release lock on immediate failure
+            showToast('Error', result ? result.error : 'Installation failed', 'error');
+            if (btn) btn.classList.remove('loading');
+        }
+    } catch (err) {
+        operationInProgress = false;
         if (btn) btn.classList.remove('loading');
     }
 };
 
 window.uninstallApp = async (id, btn = null) => {
     if (btn) btn.classList.add('loading');
+    operationInProgress = true; // Synch lock
     showToast('Uninstalling', 'Uninstallation started', 'info');
-    const result = await pyApiCall('uninstall', id);
-    if (result && result.success) {
-        showToast('Success', 'Application uninstalled', 'success');
-    } else {
-        showToast('Error', result ? result.error : 'Uninstallation failed', 'error');
+    try {
+        const result = await pyApiCall('uninstall', id);
+        if (result && result.success) {
+            showToast('Success', 'Application uninstalled', 'success');
+            packageCache = {}; // Wipe cache
+        } else {
+            operationInProgress = false; // Release lock on immediate failure
+            showToast('Error', result ? result.error : 'Uninstallation failed', 'error');
+            if (btn) btn.classList.remove('loading');
+        }
+    } catch (err) {
+        operationInProgress = false;
         if (btn) btn.classList.remove('loading');
     }
 };
 
 window.updateApp = async (id, btn = null) => {
     if (btn) btn.classList.add('loading');
+    operationInProgress = true; // Synch lock
     showToast('Updating', 'Update started', 'info');
-    const result = await pyApiCall('update', id);
-    if (result && result.success) {
-        showToast('Success', 'Application updated', 'success');
-    } else {
-        showToast('Error', result ? result.error : 'Update failed', 'error');
+    try {
+        const result = await pyApiCall('update', id);
+        if (result && result.success) {
+            showToast('Success', 'Application updated', 'success');
+            packageCache = {}; // Wipe cache
+        } else {
+            operationInProgress = false; // Release lock on immediate failure
+            showToast('Error', result ? result.error : 'Update failed', 'error');
+            if (btn) btn.classList.remove('loading');
+        }
+    } catch (err) {
+        operationInProgress = false;
         if (btn) btn.classList.remove('loading');
     }
 };
@@ -775,6 +809,19 @@ document.getElementById('import-btn').addEventListener('click', async () => {
         fetchPackages();
     }
 });
+
+const refreshBtn = document.getElementById('refresh-btn');
+if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+        if (operationInProgress) {
+            showToast('Busy', 'Another operation is already running', 'warning');
+            return;
+        }
+        packageCache = {}; // Wipe cache completely for a hard reload
+        searchInput.value = ''; // Reset query
+        fetchPackages();
+    });
+}
 
 function activateView(viewName) {
     navItems.forEach(n => n.classList.remove('active'));
@@ -849,21 +896,25 @@ packagesGrid.addEventListener('click', async (e) => {
             return;
         }
         
-        actionBtn.classList.add('loading');
-        
         if (action === 'pin') {
+            operationInProgress = true;
+            actionBtn.classList.add('loading');
             const res = await pyApiCall('pin_update', pid);
+            operationInProgress = false; // Reset lock
             if (res && res.success) {
-                packageCache = {}; // Invalidate cache on pin
+                packageCache = {};
                 showToast('Pinned', 'Package pinned successfully', 'success');
                 fetchPackages();
             } else {
                 actionBtn.classList.remove('loading');
             }
         } else if (action === 'unpin') {
+            operationInProgress = true;
+            actionBtn.classList.add('loading');
             const res = await pyApiCall('unpin_update', pid);
+            operationInProgress = false; // Reset lock
             if (res && res.success) {
-                packageCache = {}; // Invalidate cache on unpin
+                packageCache = {};
                 showToast('Unpinned', 'Package unpinned successfully', 'success');
                 fetchPackages();
             } else {
