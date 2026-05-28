@@ -25,6 +25,17 @@ themeToggleBtn.addEventListener('click', () => {
     localStorage.setItem('bauh-theme', newTheme);
 });
 
+// HTML escaping helper to prevent XSS / Local RCE
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // Toast Notifications
 const toastContainer = document.getElementById('toast-container');
 
@@ -44,8 +55,8 @@ function showToast(title, message, type = 'info') {
     toast.innerHTML = `
         ${iconSvg}
         <div class="toast-content">
-            <div class="toast-title">${title}</div>
-            <div class="toast-message">${message}</div>
+            <div class="toast-title">${escapeHtml(title)}</div>
+            <div class="toast-message">${escapeHtml(message)}</div>
         </div>
     `;
 
@@ -74,12 +85,14 @@ const batchCount = document.getElementById('batch-count');
 const batchUninstallBtn = document.getElementById('batch-uninstall-btn');
 const batchCancelBtn = document.getElementById('batch-cancel-btn');
 const updateAllBtn = document.getElementById('update-all-btn');
+const cleanupOrphansBtn = document.getElementById('cleanup-orphans-btn');
 
 const detailModal = document.getElementById('detail-modal');
 const modalClose = document.getElementById('modal-close');
 const modalBackdrop = detailModal.querySelector('.modal-backdrop');
 
 let currentPackages = [];
+let diskPackages = [];
 let currentView = 'dashboard'; // 'dashboard', 'installed', 'updates', 'activity'
 
 let selectMode = false;
@@ -196,31 +209,42 @@ function renderPackages(packages) {
         
         const actionButton = pkg.installed ? 
             (pkg.update_available ? 
-                `<button class="btn btn-primary action-btn" data-action="update" data-id="${pkg.id}">Update</button>` :
-                `<button class="btn btn-danger action-btn" data-action="uninstall" data-id="${pkg.id}">Uninstall</button>`) :
-            `<button class="btn btn-primary action-btn" data-action="install" data-id="${pkg.id}">Install</button>`;
+                `<button class="btn btn-primary action-btn" data-action="update" data-id="${escapeHtml(pkg.id)}">Update</button>` :
+                `<button class="btn btn-danger action-btn" data-action="uninstall" data-id="${escapeHtml(pkg.id)}">Uninstall</button>`) :
+            `<button class="btn btn-primary action-btn" data-action="install" data-id="${escapeHtml(pkg.id)}">Install</button>`;
         
+        const pinButton = (pkg.installed && pkg.supports_pinning) ?
+            `<button class="btn btn-pin ${pkg.update_ignored ? 'pinned' : ''} action-btn"
+                data-action="${pkg.update_ignored ? 'unpin' : 'pin'}"
+                data-id="${escapeHtml(pkg.id)}"
+                title="${pkg.update_ignored ? 'Click to allow updates' : 'Click to hold (pin) this version'}">
+                ${pkg.update_ignored ? '📌 Pinned' : '📌 Pin'}
+             </button>` : '';
+
         const isChecked = selectedPackages.has(pkg.id) ? 'checked' : '';
         
         card.innerHTML = `
             <div class="package-header">
                 <input type="checkbox" class="pkg-checkbox" ${isChecked} onclick="event.stopPropagation();">
-                <img src="${pkg.icon_url || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}" class="package-icon" alt="${pkg.name} icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}">
+                <img src="${escapeHtml(pkg.icon_url) || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}" class="package-icon" alt="${escapeHtml(pkg.name)} icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}">
                 <div class="package-info">
-                    <h3 class="package-title" title="${pkg.name}">${pkg.name}</h3>
+                    <h3 class="package-title" title="${escapeHtml(pkg.name)}">${escapeHtml(pkg.name)}</h3>
                     <div class="package-publisher">
-                        ${pkg.publisher || 'Unknown Publisher'} • v${pkg.version || 'Unknown'}
+                        ${escapeHtml(pkg.publisher || 'Unknown Publisher')} • v${escapeHtml(pkg.version || 'Unknown')}
                     </div>
                 </div>
             </div>
             <div class="package-description">
-                ${pkg.description || 'No description available for this package.'}
+                ${escapeHtml(pkg.description || 'No description available for this package.')}
             </div>
             <div class="package-footer">
                 <div class="package-tags">
-                    <span class="tag ${pkg.type.toLowerCase()}">${pkg.type}</span>
+                    <span class="tag ${escapeHtml(pkg.type.toLowerCase())}">${escapeHtml(pkg.type)}</span>
                 </div>
-                ${actionButton}
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    ${pinButton}
+                    ${actionButton}
+                </div>
             </div>
         `;
         
@@ -247,10 +271,9 @@ function renderPackages(packages) {
             }
         });
         
-        // Action Button click handler
-        const btn = card.querySelector('.action-btn');
-        if (btn) {
-            btn.addEventListener('click', (e) => {
+        // Action Buttons click handlers
+        card.querySelectorAll('.action-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const action = btn.dataset.action;
                 const pid = btn.dataset.id;
@@ -262,7 +285,23 @@ function renderPackages(packages) {
                 
                 btn.classList.add('loading');
                 
-                if (action === 'install') {
+                if (action === 'pin') {
+                    const res = await pyApiCall('pin_update', pid);
+                    if (res && res.success) {
+                        showToast('Pinned', 'Package pinned successfully', 'success');
+                        fetchPackages();
+                    } else {
+                        btn.classList.remove('loading');
+                    }
+                } else if (action === 'unpin') {
+                    const res = await pyApiCall('unpin_update', pid);
+                    if (res && res.success) {
+                        showToast('Unpinned', 'Package unpinned successfully', 'success');
+                        fetchPackages();
+                    } else {
+                        btn.classList.remove('loading');
+                    }
+                } else if (action === 'install') {
                     installApp(pid, btn);
                 } else if (action === 'uninstall') {
                     uninstallApp(pid, btn);
@@ -270,7 +309,7 @@ function renderPackages(packages) {
                     updateApp(pid, btn);
                 }
             });
-        }
+        });
         
         packagesGrid.appendChild(card);
     });
@@ -415,6 +454,7 @@ batchCancelBtn.addEventListener('click', () => {
 });
 
 updateAllBtn.addEventListener('click', async () => {
+    if (operationInProgress) { showToast('Busy', 'Another operation is already running', 'warning'); return; }
     showToast('Updating All', 'Starting system packages upgrade...', 'info');
     const result = await pyApiCall('update_all');
     if (result && result.success) {
@@ -423,6 +463,166 @@ updateAllBtn.addEventListener('click', async () => {
         showToast('Error', result ? result.error : 'Bulk upgrade failed', 'error');
     }
 });
+
+async function checkOrphans() {
+    const orphans = await pyApiCall('get_orphans');
+    if (orphans && orphans.length > 0) {
+        cleanupOrphansBtn.classList.remove('hidden');
+        cleanupOrphansBtn.innerHTML = `
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6l-1 14H6L5 6"></path>
+                <path d="M10 11v6M14 11v6"></path>
+            </svg>
+            Cleanup ${escapeHtml(orphans.length)} Orphan${orphans.length > 1 ? 's' : ''}
+        `;
+        cleanupOrphansBtn.dataset.orphanIds = JSON.stringify(orphans.map(pkg => pkg.id));
+    } else {
+        cleanupOrphansBtn.classList.add('hidden');
+    }
+}
+
+cleanupOrphansBtn.addEventListener('click', async () => {
+    if (operationInProgress) { showToast('Busy', 'Another operation is already running', 'warning'); return; }
+    const rawIds = cleanupOrphansBtn.dataset.orphanIds;
+    if (!rawIds) return;
+    const ids = JSON.parse(rawIds);
+    if (!ids || ids.length === 0) return;
+    
+    showToast('Orphan Cleanup', "Removing " + ids.length + " orphaned package(s)...", 'info');
+    
+    const result = await pyApiCall('batch_uninstall', ids);
+    if (result && result.success) {
+        showToast('Success', 'Orphaned packages removed successfully', 'success');
+        cleanupOrphansBtn.classList.add('hidden');
+        fetchPackages();
+    } else {
+        showToast('Error', result ? result.error : 'Orphan cleanup failed', 'error');
+    }
+});
+
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 B';
+    const k = 1000;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['B', 'kB', 'MB', 'GB', 'TB', 'PB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+async function renderDiskView() {
+    packagesGrid.style.display = 'none';
+    loadingState.classList.remove('hidden');
+    emptyState.classList.add('hidden');
+
+    const data = await pyApiCall('get_disk_usage');
+    loadingState.classList.add('hidden');
+
+    if (!data) {
+        packagesGrid.style.display = 'block';
+        packagesGrid.innerHTML = '<div style="padding: 32px; color: var(--text-secondary); text-align: center;">Error loading disk usage data.</div>';
+        return;
+    }
+
+    const { packages, by_type } = data;
+    diskPackages = packages || []; // Store globally for event delegation click listener
+
+    if (diskPackages.length === 0) {
+        packagesGrid.style.display = 'block';
+        packagesGrid.innerHTML = '<div style="padding: 32px; color: var(--text-secondary); text-align: center;">No packages found with disk usage information.</div>';
+        return;
+    }
+
+    packagesGrid.style.display = 'block';
+    
+    // Calculate total bytes
+    const totalBytes = by_type.reduce((acc, curr) => acc + curr.total_bytes, 0);
+    const totalHuman = formatBytes(totalBytes);
+
+    let html = `
+        <div class="disk-view-container">
+            <div class="disk-summary-card">
+                <div class="disk-summary-title">Total Managed Disk Usage</div>
+                <div class="disk-summary-value">${escapeHtml(totalHuman)}</div>
+                
+                <div class="disk-chart-container">
+                    <div class="disk-bar-track">
+    `;
+
+    const typeColors = {
+        'flatpak': '#38bdf8',
+        'snap': '#f43f5e',
+        'appimage': '#a855f7',
+        'aur': '#f59e0b',
+        'web': '#10b981',
+        'unknown': '#64748b'
+    };
+
+    const getColorForType = (type) => {
+        const t = type.toLowerCase();
+        return typeColors[t] || '#6366f1';
+    };
+
+    // Render bar segments
+    by_type.forEach(item => {
+        const percentage = totalBytes > 0 ? ((item.total_bytes / totalBytes) * 100).toFixed(1) : 0;
+        if (percentage > 0) {
+            const color = getColorForType(item.type);
+            html += `<div class="disk-bar-fill" style="width: ${percentage}%; background-color: ${color};" title="${escapeHtml(item.type)}: ${escapeHtml(item.total_human)} (${percentage}%)"></div>`;
+        }
+    });
+
+    html += `
+                    </div>
+                </div>
+                
+                <div class="disk-legend">
+    `;
+
+    by_type.forEach(item => {
+        const percentage = totalBytes > 0 ? ((item.total_bytes / totalBytes) * 100).toFixed(1) : 0;
+        const color = getColorForType(item.type);
+        html += `
+            <div class="legend-item">
+                <span class="legend-dot" style="background-color: ${color};"></span>
+                <span class="legend-label">${escapeHtml(item.type)}</span>
+                <span class="legend-value">${escapeHtml(item.total_human)} (${percentage}%)</span>
+            </div>
+        `;
+    });
+
+    html += `
+                </div>
+            </div>
+            
+            <div class="disk-packages-section">
+                <div class="disk-section-title">Package Breakdown</div>
+                <div class="disk-packages-list">
+    `;
+
+    diskPackages.forEach(pkg => {
+        const color = getColorForType(pkg.type);
+        html += `
+            <div class="disk-package-row" data-id="${escapeHtml(pkg.id)}">
+                <div class="disk-package-left">
+                    <span class="disk-package-name" title="${escapeHtml(pkg.name)}">${escapeHtml(pkg.name)}</span>
+                    <span class="disk-package-tag" style="background-color: ${color}20; color: ${color}; border: 1px solid ${color}40;">${escapeHtml(pkg.type)}</span>
+                </div>
+                <div class="disk-package-right">
+                    <span class="disk-package-size">${escapeHtml(pkg.size_human)}</span>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `
+                </div>
+            </div>
+        </div>
+    `;
+
+    packagesGrid.innerHTML = html;
+}
 
 // Render Chronological Activity Log
 async function renderActivityFeed() {
@@ -452,14 +652,14 @@ async function renderActivityFeed() {
         const actionLabel = act.action.toUpperCase();
         
         item.innerHTML = `
-            <div class="activity-icon ${iconClass}">${iconChar}</div>
+            <div class="activity-icon ${escapeHtml(iconClass)}">${escapeHtml(iconChar)}</div>
             <div class="activity-body">
-                <span class="activity-action ${act.action}">${actionLabel}</span>
-                <span class="activity-pkg">${act.pkg_name}</span>
-                <span style="color: var(--text-secondary);">(${act.pkg_type})</span>
-                ${!isSuccess && act.error ? `<span style="color: var(--status-danger); margin-left: 8px;">— ${act.error}</span>` : ''}
+                <span class="activity-action ${escapeHtml(act.action)}">${escapeHtml(actionLabel)}</span>
+                <span class="activity-pkg">${escapeHtml(act.pkg_name)}</span>
+                <span style="color: var(--text-secondary);">(${escapeHtml(act.pkg_type)})</span>
+                ${!isSuccess && act.error ? `<span style="color: var(--status-danger); margin-left: 8px;">— ${escapeHtml(act.error)}</span>` : ''}
             </div>
-            <div class="activity-time">${timeStr}</div>
+            <div class="activity-time">${escapeHtml(timeStr)}</div>
         `;
         feed.appendChild(item);
     });
@@ -473,6 +673,7 @@ async function fetchPackages() {
     emptyState.classList.add('hidden');
     loadingState.classList.remove('hidden');
     updateAllBtn.classList.add('hidden'); // hidden by default
+    cleanupOrphansBtn.classList.add('hidden'); // hidden by default
 
     // If batch mode was active, cancel it before view changes or search queries
     if (selectMode) {
@@ -488,6 +689,7 @@ async function fetchPackages() {
     } else {
         if (currentView === 'installed') {
             results = await pyApiCall('get_installed', type);
+            checkOrphans();
         } else if (currentView === 'updates') {
             results = await pyApiCall('get_updates', type);
             if (results && results.length > 0) {
@@ -496,6 +698,9 @@ async function fetchPackages() {
         } else if (currentView === 'activity') {
             loadingState.classList.add('hidden');
             renderActivityFeed();
+            return;
+        } else if (currentView === 'disk') {
+            renderDiskView();
             return;
         } else {
             results = await pyApiCall('get_suggestions', type);
@@ -562,25 +767,85 @@ typeFilter.addEventListener('change', () => {
     fetchPackages();
 });
 
+// Export / Import Manifest listeners
+document.getElementById('export-btn').addEventListener('click', async () => {
+    showToast('Exporting', 'Writing manifest...', 'info');
+    const result = await pyApiCall('export_packages');
+    if (result) {
+        showToast('Exported', `${result.count} packages saved to ${result.path}`, 'success');
+    }
+});
+
+document.getElementById('import-btn').addEventListener('click', async () => {
+    showToast('Importing', 'Reading ~/bauh-manifest.json and installing missing packages...', 'info');
+    const result = await pyApiCall('import_packages');
+    if (result) {
+        const installed = result.installed || 0;
+        const skipped = result.skipped || 0;
+        const failed = result.failed || [];
+        showToast('Import Complete', "Installed: " + installed + " | Skipped (already present): " + skipped + " | Failed: " + failed.length, failed.length > 0 ? 'error' : 'success');
+        fetchPackages();
+    }
+});
+
+function activateView(viewName) {
+    navItems.forEach(n => n.classList.remove('active'));
+    const btn = document.querySelector(`.nav-item[data-view="${viewName}"]`);
+    if (btn) {
+        btn.classList.add('active');
+    }
+    
+    currentView = viewName;
+    searchInput.value = ''; // clear search on view change
+    
+    if (viewName === 'settings') {
+        packagesGrid.innerHTML = '';
+        emptyState.classList.add('hidden');
+        loadingState.classList.add('hidden');
+        packagesGrid.style.display = 'block';
+        packagesGrid.innerHTML = '<div style="padding: 32px; color: var(--text-secondary);">Settings module not yet implemented in Web UI.</div>';
+    } else {
+        fetchPackages();
+    }
+}
+
 navItems.forEach(item => {
     item.addEventListener('click', (e) => {
         const btn = e.currentTarget;
-        navItems.forEach(n => n.classList.remove('active'));
-        btn.classList.add('active');
-        
-        currentView = btn.getAttribute('data-view');
-        searchInput.value = ''; // clear search on view change
-        
-        if (currentView === 'settings') {
-            packagesGrid.innerHTML = '';
-            emptyState.classList.add('hidden');
-            loadingState.classList.add('hidden');
-            packagesGrid.style.display = 'block';
-            packagesGrid.innerHTML = '<div style="padding: 32px; color: var(--text-secondary);">Settings module not yet implemented in Web UI.</div>';
-        } else {
-            fetchPackages();
-        }
+        const viewName = btn.getAttribute('data-view');
+        activateView(viewName);
     });
+});
+
+const shortcutsHelpBtn = document.getElementById('shortcuts-help-btn');
+if (shortcutsHelpBtn) {
+    shortcutsHelpBtn.addEventListener('click', () => {
+        showToast(
+            'Keyboard Shortcuts',
+            '/ Search  •  Esc Clear/Close  •  Ctrl+H Home  •  Ctrl+I Installed  •  Ctrl+U Updates  •  Ctrl+A Activity  •  Ctrl+D Disk  •  Ctrl+Shift+U Update All  •  Ctrl+E Export',
+            'info'
+        );
+    });
+}
+
+// Event delegation for disk package rows
+packagesGrid.addEventListener('click', (e) => {
+    const row = e.target.closest('.disk-package-row');
+    if (row) {
+        const pkgId = row.dataset.id;
+        const pkg = diskPackages.find(p => p.id === pkgId);
+        if (pkg) {
+            openDetailModal({
+                id: pkg.id,
+                name: pkg.name,
+                type: pkg.type,
+                icon_url: '',
+                description: '',
+                installed: true,
+                update_available: false
+            });
+        }
+    }
 });
 
 // Initialization hook when pywebview is ready
@@ -603,6 +868,9 @@ const mockApi = {
         { id: 'app2', name: 'Spotify', publisher: 'Spotify', version: '1.2.0', type: 'Snap', description: 'Music streaming service.', installed: true },
         { id: 'app3', name: 'Discord', publisher: 'Discord', version: '0.0.28', type: 'AUR', description: 'Chat for Gamers.', installed: true, update_available: true }
     ],
+    get_orphans: async () => [
+        { id: 'orphan1', name: 'Mock Orphan Package', publisher: 'Mock Dev', version: '1.0', type: 'Flatpak', description: 'An unused orphaned package.', installed: true, orphan: true }
+    ],
     get_updates: async () => [
         { id: 'app3', name: 'Discord', publisher: 'Discord', version: '0.0.28', type: 'AUR', description: 'Chat for Gamers.', installed: true, update_available: true }
     ],
@@ -622,7 +890,37 @@ const mockApi = {
     uninstall: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 1000)); },
     update: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 1000)); },
     batch_uninstall: async (ids) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 1500)); },
-    update_all: async () => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 2000)); }
+    update_all: async () => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 2000)); },
+    pin_update: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 500)); },
+    unpin_update: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 500)); },
+    get_disk_usage: async () => {
+        return {
+            packages: [
+                { id: 'app1', name: 'Firefox', type: 'Flatpak', size_bytes: 350000000, size_human: '350.00 MB' },
+                { id: 'app2', name: 'Spotify', type: 'Snap', size_bytes: 180000000, size_human: '180.00 MB' },
+                { id: 'app3', name: 'Discord', type: 'AUR', size_bytes: 120000000, size_human: '120.00 MB' },
+                { id: 'app4', name: 'Steam', type: 'Flatpak', size_bytes: 850000000, size_human: '850.00 MB' }
+            ],
+            by_type: [
+                { type: 'Flatpak', total_bytes: 1200000000, total_human: '1.20 GB' },
+                { type: 'Snap', total_bytes: 180000000, total_human: '180.00 MB' },
+                { type: 'AUR', total_bytes: 120000000, total_human: '120.00 MB' }
+            ]
+        };
+    },
+    export_packages: async () => {
+        return {
+            path: '~/bauh-manifest.json',
+            count: 3
+        };
+    },
+    import_packages: async () => {
+        return {
+            installed: 1,
+            skipped: 2,
+            failed: []
+        };
+    }
 };
 
 // Fallback initialization if pywebview event doesn't fire within 1s
@@ -631,3 +929,117 @@ setTimeout(() => {
         fetchPackages();
     }
 }, 1000);
+
+// Global Keyboard Shortcuts
+document.addEventListener('keydown', (e) => {
+    const activeEl = document.activeElement;
+    const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.isContentEditable
+    );
+
+    const key = e.key;
+    const ctrlKey = e.ctrlKey || e.metaKey; // Treat CMD key on macOS like Ctrl
+    const shiftKey = e.shiftKey;
+
+    // / pressed and not in input: focus search
+    if (key === '/' && !isInput) {
+        e.preventDefault();
+        if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+        }
+        return;
+    }
+
+    // Escape pressed: context-aware close / clear
+    if (key === 'Escape') {
+        // 1. Close detail modal if open
+        if (detailModal && !detailModal.classList.contains('hidden')) {
+            detailModal.classList.add('hidden');
+            return;
+        }
+
+        // 2. Close terminal panel if open and not busy
+        const terminalPanel = document.getElementById('terminal-panel');
+        const terminalOverlay = document.getElementById('terminal-overlay');
+        if (terminalPanel && !terminalPanel.classList.contains('hidden') && !operationInProgress) {
+            terminalPanel.classList.add('hidden');
+            if (terminalOverlay) {
+                terminalOverlay.classList.add('hidden');
+            }
+            fetchPackages();
+            return;
+        }
+
+        // 3. Deactivate select mode if active
+        if (selectMode) {
+            toggleSelectMode(false);
+            return;
+        }
+
+        // 4. Clear search input if not empty
+        if (searchInput && searchInput.value) {
+            searchInput.value = '';
+            fetchPackages();
+            return;
+        }
+    }
+
+    // Ctrl+H: Home/Dashboard
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'h' && !isInput) {
+        e.preventDefault();
+        activateView('dashboard');
+        return;
+    }
+
+    // Ctrl+I: Installed
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'i' && !isInput) {
+        e.preventDefault();
+        activateView('installed');
+        return;
+    }
+
+    // Ctrl+U: Updates
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'u' && !isInput) {
+        e.preventDefault();
+        activateView('updates');
+        return;
+    }
+
+    // Ctrl+A: Activity (only when not typing in an input)
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'a' && !isInput) {
+        e.preventDefault();
+        activateView('activity');
+        return;
+    }
+
+    // Ctrl+D: Disk Usage
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'd' && !isInput) {
+        e.preventDefault();
+        activateView('disk');
+        return;
+    }
+
+    // Ctrl+Shift+U: Update All
+    if (ctrlKey && shiftKey && key.toLowerCase() === 'u' && !isInput) {
+        e.preventDefault();
+        const updateAllBtn = document.getElementById('update-all-btn');
+        if (updateAllBtn && !updateAllBtn.classList.contains('hidden')) {
+            updateAllBtn.click();
+        }
+        return;
+    }
+
+    // Ctrl+E: Export
+    if (ctrlKey && !shiftKey && key.toLowerCase() === 'e' && !isInput) {
+        e.preventDefault();
+        const exportBtn = document.getElementById('export-btn');
+        if (exportBtn) {
+            exportBtn.click();
+        }
+        return;
+    }
+});

@@ -791,3 +791,180 @@ body {
 .activity-pkg { color: var(--text-primary); font-weight: 500; }
 .activity-time { color: var(--text-secondary); font-size: 12px; flex-shrink: 0; }
 
+/* Disk Usage Breakdown View */
+.disk-view-container {
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    max-width: 1000px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.disk-summary-card {
+    background: var(--bg-surface-glass);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    box-shadow: var(--shadow-glass);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.disk-summary-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+}
+
+.disk-summary-value {
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+}
+
+.disk-chart-container {
+    width: 100%;
+}
+
+.disk-bar-track {
+    height: 16px;
+    width: 100%;
+    background-color: var(--bg-surface-hover);
+    border-radius: var(--radius-sm);
+    display: flex;
+    overflow: hidden;
+}
+
+.disk-bar-fill {
+    height: 100%;
+    transition: width var(--transition-smooth);
+}
+
+.disk-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.legend-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: capitalize;
+}
+
+.legend-value {
+    color: var(--text-secondary);
+}
+
+.disk-packages-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.disk-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.disk-packages-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.disk-package-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.disk-package-row:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--accent-hover);
+}
+
+.disk-package-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+}
+
+.disk-package-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.disk-package-tag {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.disk-package-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.disk-package-size {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.btn-pin {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 5px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-pin:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+.btn-pin.pinned { background: rgba(245, 158, 11, 0.1); border-color: var(--status-warning); color: var(--status-warning); }
+.btn-pin.pinned:hover { background: var(--status-warning); color: white; }
+
+

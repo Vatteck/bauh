@@ -31,6 +31,10 @@
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                     Updates <span class="badge" id="updates-badge">0</span>
                 </button>
+                <button class="nav-item" data-view="disk">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4l3 3"></path></svg>
+                    Disk
+                </button>
                 <button class="nav-item" data-view="activity">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                     Activity
@@ -42,10 +46,13 @@
             </nav>
             
             <div class="sidebar-footer">
+                <button id="export-btn" class="btn btn-outline" style="font-size:12px; width:100%; margin-bottom:8px;" title="Export installed packages to ~/bauh-manifest.json">⬆ Export</button>
+                <button id="import-btn" class="btn btn-outline" style="font-size:12px; width:100%; margin-bottom:8px;" title="Install packages from ~/bauh-manifest.json">⬇ Import</button>
                 <button id="theme-toggle" class="icon-button" aria-label="Toggle theme">
                     <svg class="icon dark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
                     <svg class="icon light-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
                 </button>
+                <button id="shortcuts-help-btn" class="icon-button" style="margin-left: 8px; font-weight: bold; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;" aria-label="Keyboard shortcuts" title="Show keyboard shortcuts">?</button>
             </div>
         </aside>
 
@@ -65,7 +72,16 @@
                         </svg>
                         Update All
                     </button>
+                    <button id="cleanup-orphans-btn" class="btn btn-danger hidden">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6l-1 14H6L5 6"></path>
+                            <path d="M10 11v6M14 11v6"></path>
+                        </svg>
+                        Cleanup Orphans
+                    </button>
                     <button id="select-mode-btn" class="btn btn-secondary" style="margin-right: 8px;">Select</button>
+
                     <select id="type-filter" class="styled-select">
                         <option value="all">All Types</option>
                         <option value="appimage">AppImage</option>
