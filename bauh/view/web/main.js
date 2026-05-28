@@ -202,6 +202,9 @@ function renderPackages(packages) {
     emptyState.classList.add('hidden');
     packagesGrid.style.display = 'grid';
 
+    // Optimize: Use DocumentFragment to batch DOM insertions in a single reflow pass
+    const fragment = document.createDocumentFragment();
+
     packages.forEach(pkg => {
         const card = document.createElement('div');
         card.className = `package-card ${selectMode ? 'select-mode' : ''} ${selectedPackages.has(pkg.id) ? 'selected' : ''}`;
@@ -248,71 +251,11 @@ function renderPackages(packages) {
             </div>
         `;
         
-        // Card Click Handler
-        card.addEventListener('click', (e) => {
-            // Ignore if clicked on the action button directly
-            if (e.target.closest('.action-btn')) return;
-            
-            if (selectMode) {
-                const chk = card.querySelector('.pkg-checkbox');
-                const isSel = selectedPackages.has(pkg.id);
-                if (isSel) {
-                    selectedPackages.delete(pkg.id);
-                    card.classList.remove('selected');
-                    if (chk) chk.checked = false;
-                } else {
-                    selectedPackages.add(pkg.id);
-                    card.classList.add('selected');
-                    if (chk) chk.checked = true;
-                }
-                updateBatchBar();
-            } else {
-                openDetailModal(pkg);
-            }
-        });
-        
-        // Action Buttons click handlers
-        card.querySelectorAll('.action-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const action = btn.dataset.action;
-                const pid = btn.dataset.id;
-                
-                if (operationInProgress) {
-                    showToast('Busy', 'Another operation is already running', 'warning');
-                    return;
-                }
-                
-                btn.classList.add('loading');
-                
-                if (action === 'pin') {
-                    const res = await pyApiCall('pin_update', pid);
-                    if (res && res.success) {
-                        showToast('Pinned', 'Package pinned successfully', 'success');
-                        fetchPackages();
-                    } else {
-                        btn.classList.remove('loading');
-                    }
-                } else if (action === 'unpin') {
-                    const res = await pyApiCall('unpin_update', pid);
-                    if (res && res.success) {
-                        showToast('Unpinned', 'Package unpinned successfully', 'success');
-                        fetchPackages();
-                    } else {
-                        btn.classList.remove('loading');
-                    }
-                } else if (action === 'install') {
-                    installApp(pid, btn);
-                } else if (action === 'uninstall') {
-                    uninstallApp(pid, btn);
-                } else if (action === 'update') {
-                    updateApp(pid, btn);
-                }
-            });
-        });
-        
-        packagesGrid.appendChild(card);
+        // Optimize: Clicks are now handled by single event delegation on packagesGrid
+        fragment.appendChild(card);
     });
+
+    packagesGrid.appendChild(fragment);
 }
 
 // Package Detail Modal View
@@ -828,8 +771,9 @@ if (shortcutsHelpBtn) {
     });
 }
 
-// Event delegation for disk package rows
-packagesGrid.addEventListener('click', (e) => {
+// Event delegation for packagesGrid (disk rows, package cards, and action buttons)
+packagesGrid.addEventListener('click', async (e) => {
+    // 1. Check disk package row click
     const row = e.target.closest('.disk-package-row');
     if (row) {
         const pkgId = row.dataset.id;
@@ -844,6 +788,72 @@ packagesGrid.addEventListener('click', (e) => {
                 installed: true,
                 update_available: false
             });
+        }
+        return;
+    }
+
+    // 2. Check package action button click
+    const actionBtn = e.target.closest('.action-btn');
+    if (actionBtn) {
+        e.stopPropagation();
+        const action = actionBtn.dataset.action;
+        const pid = actionBtn.dataset.id;
+        
+        if (operationInProgress) {
+            showToast('Busy', 'Another operation is already running', 'warning');
+            return;
+        }
+        
+        actionBtn.classList.add('loading');
+        
+        if (action === 'pin') {
+            const res = await pyApiCall('pin_update', pid);
+            if (res && res.success) {
+                showToast('Pinned', 'Package pinned successfully', 'success');
+                fetchPackages();
+            } else {
+                actionBtn.classList.remove('loading');
+            }
+        } else if (action === 'unpin') {
+            const res = await pyApiCall('unpin_update', pid);
+            if (res && res.success) {
+                showToast('Unpinned', 'Package unpinned successfully', 'success');
+                fetchPackages();
+            } else {
+                actionBtn.classList.remove('loading');
+            }
+        } else if (action === 'install') {
+            installApp(pid, actionBtn);
+        } else if (action === 'uninstall') {
+            uninstallApp(pid, actionBtn);
+        } else if (action === 'update') {
+            updateApp(pid, actionBtn);
+        }
+        return;
+    }
+
+    // 3. Check package card click (only if not clicking on action-btn)
+    const card = e.target.closest('.package-card');
+    if (card && !e.target.closest('.action-btn')) {
+        const pkgId = card.dataset.id;
+        const pkg = currentPackages.find(p => p.id === pkgId);
+        if (!pkg) return;
+
+        if (selectMode) {
+            const chk = card.querySelector('.pkg-checkbox');
+            const isSel = selectedPackages.has(pkg.id);
+            if (isSel) {
+                selectedPackages.delete(pkg.id);
+                card.classList.remove('selected');
+                if (chk) chk.checked = false;
+            } else {
+                selectedPackages.add(pkg.id);
+                card.classList.add('selected');
+                if (chk) chk.checked = true;
+            }
+            updateBatchBar();
+        } else {
+            openDetailModal(pkg);
         }
     }
 });

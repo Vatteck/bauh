@@ -251,7 +251,6 @@ body {
     padding: 32px;
 }
 
-/* Package Card */
 .package-card {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
@@ -265,6 +264,17 @@ body {
     cursor: default;
     position: relative;
     overflow: hidden;
+
+    /* Performance: Isolate rendering and skip painting offscreen cards */
+    content-visibility: auto;
+    contain-intrinsic-size: auto none auto 180px;
+}
+
+/* Fallback for engines without content-visibility support */
+@supports not (content-visibility: auto) {
+    .package-card {
+        contain: layout style paint;
+    }
 }
 
 .package-card:hover {
