@@ -37,6 +37,15 @@ class BauhApi:
             self.logger.error("Error during software managers preparation:")
             traceback.print_exc()
 
+    def _get_valid_icon_url(self, icon_url: Optional[str]) -> str:
+        if not icon_url:
+            return ''
+        if not icon_url.startswith(('data:', 'http://', 'https://')):
+            local_path = icon_url[7:] if icon_url.startswith('file://') else icon_url
+            import os
+            return icon_url if os.path.isfile(local_path) else ''
+        return icon_url
+
     def _serialize_pkg(self, pkg) -> dict:
         pkg_id = str(id(pkg))
         with self._registry_lock:
@@ -63,7 +72,7 @@ class BauhApi:
             'type': pkg_type,
             'installed': bool(pkg.installed),
             'update_available': bool(pkg.update),
-            'icon_url': pkg.icon_url or '',
+            'icon_url': self._get_valid_icon_url(pkg.icon_url),
             'publisher': publisher,
             'size': pkg.size,
             'categories': list(pkg.categories) if pkg.categories else [],
