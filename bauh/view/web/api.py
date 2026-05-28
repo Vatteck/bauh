@@ -1,0 +1,299 @@
+import logging
+import threading
+import traceback
+from typing import List, Optional
+
+from bauh.view.core.controller import GenericSoftwareManager
+from bauh.view.web.watcher import WebviewWatcher
+from bauh.view.web.activity_log import record_activity, get_activity_log
+
+
+class BauhApi:
+
+    def __init__(self, manager: GenericSoftwareManager, logger: logging.Logger):
+        self.manager = manager
+        self.logger = logger
+        self.pkg_registry = {}  # opaque_id -> SoftwarePackage
+        self._registry_lock = threading.Lock()
+        self.window = None
+        
+        # Prepare the managers in a background thread to prevent GUI lockup
+        self._prepare_thread = threading.Thread(target=self._prepare_manager, daemon=True)
+        self._prepare_thread.start()
+
+    def set_window(self, window):
+        self.window = window
+        self.logger.info("pywebview window reference linked in BauhApi")
+
+    def _prepare_manager(self):
+        try:
+            self.logger.info("Initializing software managers in background thread...")
+            # prepare(task_manager, root_password, internet_available)
+            self.manager.prepare(task_manager=None, root_password=None, internet_available=True)
+            self.logger.info("Software managers successfully prepared.")
+        except Exception:
+            self.logger.error("Error during software managers preparation:")
+            traceback.print_exc()
+
+    def _serialize_pkg(self, pkg) -> dict:
+        pkg_id = str(id(pkg))
+        with self._registry_lock:
+            self.pkg_registry[pkg_id] = pkg
+        
+        try:
+            publisher = pkg.get_publisher() or ''
+        except Exception:
+            publisher = ''
+
+        try:
+            pkg_type = pkg.get_type() or pkg.gem_name
+        except Exception:
+            pkg_type = pkg.gem_name
+
+        return {
+            'id': pkg_id,
+            'name': pkg.name or '',
+            'description': pkg.description or '',
+            'version': pkg.version or '',
+            'latest_version': pkg.latest_version or '',
+            'type': pkg_type,
+            'installed': bool(pkg.installed),
+            'update_available': bool(pkg.update),
+            'icon_url': pkg.icon_url or '',
+            'publisher': publisher,
+            'size': pkg.size,
+            'categories': list(pkg.categories) if pkg.categories else [],
+            'can_be_run': pkg.can_be_run() if hasattr(pkg, 'can_be_run') else False,
+            'can_be_downgraded': pkg.can_be_downgraded() if hasattr(pkg, 'can_be_downgraded') else False,
+            'has_info': pkg.has_info() if hasattr(pkg, 'has_info') else False,
+            'has_history': pkg.has_history() if hasattr(pkg, 'has_history') else False,
+        }
+
+    def _get_pkg(self, pkg_id: str):
+        with self._registry_lock:
+            return self.pkg_registry.get(pkg_id)
+
+    def get_suggestions(self, pkg_type: str = 'all') -> dict:
+        try:
+            self.logger.info("get_suggestions called")
+            suggestions = self.manager.list_suggestions(limit=20, filter_installed=False)
+            pkgs = [s.package for s in (suggestions or [])]
+            return {'status': 'ok', 'data': [self._serialize_pkg(p) for p in pkgs]}
+        except Exception as e:
+            self.logger.error(f"Error fetching suggestions: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
+    def get_installed(self, pkg_type: str = 'all') -> dict:
+        try:
+            self.logger.info("get_installed called")
+            result = self.manager.read_installed()
+            pkgs = result.installed or []
+            return {'status': 'ok', 'data': [self._serialize_pkg(p) for p in pkgs]}
+        except Exception as e:
+            self.logger.error(f"Error fetching installed packages: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
+    def get_updates(self, pkg_type: str = 'all') -> dict:
+        try:
+            self.logger.info("get_updates called")
+            result = self.manager.read_installed()
+            pkgs = [p for p in (result.installed or []) if p.update]
+            return {'status': 'ok', 'data': [self._serialize_pkg(p) for p in pkgs]}
+        except Exception as e:
+            self.logger.error(f"Error fetching updates: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
+    def search(self, query: str, pkg_type: str = 'all') -> dict:
+        try:
+            self.logger.info(f"search called for: {query}")
+            result = self.manager.search(words=query)
+            pkgs = (result.installed or []) + (result.new or [])
+            return {'status': 'ok', 'data': [self._serialize_pkg(p) for p in pkgs]}
+        except Exception as e:
+            self.logger.error(f"Error searching packages for query '{query}': {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
+    def install(self, pkg_id: str) -> dict:
+        pkg = self._get_pkg(pkg_id)
+        if not pkg:
+            return {'status': 'error', 'message': f"Unknown package id: {pkg_id}"}
+        try:
+            self.logger.info(f"Installing package: {pkg.name}")
+            if self.window:
+                self.window.evaluate_js(f"terminalOpen('Installing {pkg.name}')")
+            watcher = WebviewWatcher(self.logger, self.window)
+            result = self.manager.install(pkg, root_password=None, disk_loader=None, handler=watcher)
+            success = result.success if result else False
+            if self.window:
+                self.window.evaluate_js(f"terminalSetDone({str(success).lower()})")
+            
+            # Record Activity
+            record_activity('install', pkg.name, pkg.get_type() or pkg.gem_name, success)
+            
+            return {'status': 'ok', 'success': success}
+        except Exception as e:
+            self.logger.error(f"Error installing package {pkg.name}: {e}")
+            traceback.print_exc()
+            if self.window:
+                self.window.evaluate_js("terminalSetDone(false)")
+            record_activity('install', pkg.name, pkg.get_type() or pkg.gem_name, False, str(e))
+            return {'status': 'error', 'message': str(e)}
+
+    def uninstall(self, pkg_id: str) -> dict:
+        pkg = self._get_pkg(pkg_id)
+        if not pkg:
+            return {'status': 'error', 'message': f"Unknown package id: {pkg_id}"}
+        try:
+            self.logger.info(f"Uninstalling package: {pkg.name}")
+            if self.window:
+                self.window.evaluate_js(f"terminalOpen('Uninstalling {pkg.name}')")
+            watcher = WebviewWatcher(self.logger, self.window)
+            result = self.manager.uninstall(pkg, root_password=None, handler=watcher)
+            success = result.success if result else False
+            if self.window:
+                self.window.evaluate_js(f"terminalSetDone({str(success).lower()})")
+            
+            # Record Activity
+            record_activity('uninstall', pkg.name, pkg.get_type() or pkg.gem_name, success)
+            
+            return {'status': 'ok', 'success': success}
+        except Exception as e:
+            self.logger.error(f"Error uninstalling package {pkg.name}: {e}")
+            traceback.print_exc()
+            if self.window:
+                self.window.evaluate_js("terminalSetDone(false)")
+            record_activity('uninstall', pkg.name, pkg.get_type() or pkg.gem_name, False, str(e))
+            return {'status': 'error', 'message': str(e)}
+
+    def update(self, pkg_id: str) -> dict:
+        pkg = self._get_pkg(pkg_id)
+        if not pkg:
+            return {'status': 'error', 'message': f"Unknown package id: {pkg_id}"}
+        try:
+            self.logger.info(f"Updating package: {pkg.name}")
+            if self.window:
+                self.window.evaluate_js(f"terminalOpen('Updating {pkg.name}')")
+            watcher = WebviewWatcher(self.logger, self.window)
+            reqs = self.manager.get_upgrade_requirements([pkg], root_password=None, watcher=watcher)
+            success = self.manager.upgrade(reqs, root_password=None, handler=watcher)
+            if self.window:
+                self.window.evaluate_js(f"terminalSetDone({str(bool(success)).lower()})")
+            
+            # Record Activity
+            record_activity('update', pkg.name, pkg.get_type() or pkg.gem_name, bool(success))
+            
+            return {'status': 'ok', 'success': bool(success)}
+        except Exception as e:
+            self.logger.error(f"Error updating package {pkg.name}: {e}")
+            traceback.print_exc()
+            if self.window:
+                self.window.evaluate_js("terminalSetDone(false)")
+            record_activity('update', pkg.name, pkg.get_type() or pkg.gem_name, False, str(e))
+            return {'status': 'error', 'message': str(e)}
+
+    def get_info(self, pkg_id: str) -> dict:
+        pkg = self._get_pkg(pkg_id)
+        if not pkg:
+            return {'status': 'error', 'message': f"Unknown package id: {pkg_id}"}
+        try:
+            self.logger.info(f"get_info requested for package: {pkg.name}")
+            info = self.manager.get_info(pkg)
+            return {'status': 'ok', 'data': info or {}}
+        except Exception as e:
+            self.logger.error(f"Error getting info for package {pkg.name}: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
+    def batch_uninstall(self, pkg_ids: List[str]) -> dict:
+        try:
+            self.logger.info(f"Batch uninstall triggered for packages: {pkg_ids}")
+            pkgs = []
+            for pid in pkg_ids:
+                p = self._get_pkg(pid)
+                if p:
+                    pkgs.append(p)
+            
+            if not pkgs:
+                return {'status': 'error', 'message': 'No valid packages specified for uninstall'}
+                
+            self.logger.info(f"Prepared batch uninstall for: {[p.name for p in pkgs]}")
+            watcher = WebviewWatcher(self.logger, self.window)
+            
+            success = True
+            for idx, pkg in enumerate(pkgs):
+                if self.window:
+                    self.window.evaluate_js(f"terminalOpen('Uninstalling {pkg.name} ({idx+1}/{len(pkgs)})')")
+                
+                res = self.manager.uninstall(pkg, root_password=None, handler=watcher)
+                pkg_success = res.success if res else False
+                
+                # Record individual activity
+                record_activity('uninstall', pkg.name, pkg.get_type() or pkg.gem_name, pkg_success)
+                
+                if not pkg_success:
+                    self.logger.error(f"Failed to uninstall {pkg.name}")
+                    success = False
+                    break
+                    
+            if self.window:
+                self.window.evaluate_js(f"terminalSetDone({str(success).lower()})")
+                
+            return {'status': 'ok', 'success': success}
+        except Exception as e:
+            self.logger.error(f"Error in batch uninstall: {e}")
+            traceback.print_exc()
+            if self.window:
+                self.window.evaluate_js("terminalSetDone(false)")
+            return {'status': 'error', 'message': str(e)}
+
+    def update_all(self) -> dict:
+        try:
+            self.logger.info("Update All triggered")
+            if self.window:
+                self.window.evaluate_js("terminalOpen('Checking for system updates...')")
+            
+            watcher = WebviewWatcher(self.logger, self.window)
+            installed_res = self.manager.read_installed()
+            upgradable = [p for p in (installed_res.installed or []) if p.update]
+            
+            if not upgradable:
+                self.logger.info("No updates available.")
+                if self.window:
+                    self.window.evaluate_js("terminalSetStatus('No updates available')")
+                    self.window.evaluate_js("terminalSetDone(true)")
+                return {'status': 'ok', 'success': True, 'message': 'No updates available'}
+            
+            self.logger.info(f"Found {len(upgradable)} packages to upgrade: {[p.name for p in upgradable]}")
+            if self.window:
+                self.window.evaluate_js(f"terminalSetStatus('Upgrading {len(upgradable)} packages...')")
+                
+            reqs = self.manager.get_upgrade_requirements(upgradable, root_password=None, watcher=watcher)
+            success = self.manager.upgrade(reqs, root_password=None, handler=watcher)
+            
+            if self.window:
+                self.window.evaluate_js(f"terminalSetDone({str(bool(success)).lower()})")
+            
+            # Record activity for the bulk operation
+            record_activity('update_all', f"{len(upgradable)} packages", 'system', bool(success))
+            
+            return {'status': 'ok', 'success': bool(success)}
+        except Exception as e:
+            self.logger.error(f"Error in Update All: {e}")
+            traceback.print_exc()
+            if self.window:
+                self.window.evaluate_js("terminalSetDone(false)")
+            record_activity('update_all', "System updates", 'system', False, str(e))
+            return {'status': 'error', 'message': str(e)}
+
+    def get_activity(self) -> dict:
+        try:
+            logs = get_activity_log()
+            return {'status': 'ok', 'data': logs}
+        except Exception as e:
+            self.logger.error(f"Error fetching activity log: {e}")
+            return {'status': 'error', 'message': str(e)}
+
