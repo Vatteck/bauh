@@ -206,14 +206,24 @@ document.getElementById('terminal-close').addEventListener('click', () => {
     fetchPackages(); // refresh packages list
 });
 
-// Helper to sanitize package icon URL and avoid browser 404 errors for invalid filenames/relative paths
-function getIconUrl(iconUrl) {
+// Fallback placeholder icon (Base64 encoded SVG)
+const ICON_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg==';
+
+// Determine whether an icon URL is safe to assign directly to src (won't 404)
+// base64 data URIs are safe. Remote http(s) URLs are NOT safe (upstream repos delete icons).
+// Bare filenames without paths are invalid.
+function getIconSrc(iconUrl) {
+    if (!iconUrl) return ICON_PLACEHOLDER;
+    if (iconUrl.startsWith('data:')) return iconUrl; // base64 — always safe
+    return ICON_PLACEHOLDER; // Everything else (remote URLs, bare filenames) gets placeholder
+}
+
+// Returns the original URL only if it's a remote URL worth probing, empty string otherwise
+function getIconDataSrc(iconUrl) {
     if (!iconUrl) return '';
-    // If it's a raw filename without directory separator and not base64 data, it's invalid and will fail
-    if (!iconUrl.includes('/') && !iconUrl.startsWith('data:')) {
-        return '';
-    }
-    return iconUrl;
+    if (iconUrl.startsWith('data:')) return ''; // already handled by getIconSrc
+    if (iconUrl.startsWith('http://') || iconUrl.startsWith('https://')) return iconUrl;
+    return ''; // bare filenames, file:// etc — already handled by backend base64 encoding
 }
 
 // Render Package Cards
@@ -256,7 +266,7 @@ function renderPackages(packages) {
         card.innerHTML = `
             <div class="package-header">
                 <input type="checkbox" class="pkg-checkbox" ${isChecked} onclick="event.stopPropagation();">
-                <img src="${escapeHtml(getIconUrl(pkg.icon_url)) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg=='}" class="package-icon" alt="${escapeHtml(pkg.name)} icon" loading="lazy" decoding="async" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg==';">
+                <img src="${getIconSrc(pkg.icon_url)}" data-src="${escapeHtml(getIconDataSrc(pkg.icon_url))}" class="package-icon" alt="${escapeHtml(pkg.name)} icon" loading="lazy" decoding="async">
                 <div class="package-info">
                     <h3 class="package-title" title="${escapeHtml(pkg.name)}">${escapeHtml(pkg.name)}</h3>
                     <div class="package-publisher">
@@ -283,11 +293,33 @@ function renderPackages(packages) {
     });
 
     packagesGrid.appendChild(fragment);
+    deferredIconLoad();
+}
+
+// Silently probe remote icon URLs and upgrade from placeholder on success.
+// Uses JS Image() objects which do NOT log 404 errors to console on failure.
+function deferredIconLoad() {
+    const imgs = packagesGrid.querySelectorAll('img.package-icon[data-src]');
+    imgs.forEach(img => {
+        const remoteSrc = img.getAttribute('data-src');
+        if (!remoteSrc) return;
+        const probe = new Image();
+        probe.onload = () => { img.src = remoteSrc; };
+        // On failure: do nothing — placeholder stays, no console error
+        probe.src = remoteSrc;
+    });
 }
 
 // Package Detail Modal View
 function openDetailModal(pkg) {
-    document.getElementById('detail-icon').src = getIconUrl(pkg.icon_url) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg==';
+    const detailIcon = document.getElementById('detail-icon');
+    detailIcon.src = getIconSrc(pkg.icon_url);
+    const remoteUrl = getIconDataSrc(pkg.icon_url);
+    if (remoteUrl) {
+        const probe = new Image();
+        probe.onload = () => { detailIcon.src = remoteUrl; };
+        probe.src = remoteUrl;
+    }
     document.getElementById('detail-icon').onerror = function() {
         this.onerror = null;
         this.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg==';
