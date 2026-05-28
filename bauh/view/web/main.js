@@ -99,6 +99,12 @@ let selectMode = false;
 let selectedPackages = new Set();
 let operationInProgress = false;
 
+let packageCache = {};
+
+function getCacheKey(view, type, query) {
+    return `${view}_${type}_${query}`;
+}
+
 // Function to call Python backend methods
 async function pyApiCall(methodName, ...args) {
     if (window.pywebview && window.pywebview.api) {
@@ -170,6 +176,7 @@ window.terminalSetProgress = (val) => {
 
 window.terminalSetDone = (success) => {
     operationInProgress = false;
+    packageCache = {}; // Invalidate cache on terminal operation completion
     const doneMsg = document.getElementById('terminal-done-msg');
     doneMsg.className = success ? 'terminal-done-success' : 'terminal-done-error';
     doneMsg.textContent = success ? '✓ Operation completed successfully.' : '✗ Operation failed.';
@@ -397,6 +404,7 @@ batchUninstallBtn.addEventListener('click', async () => {
     
     const result = await pyApiCall('batch_uninstall', ids);
     if (result && result.success) {
+        packageCache = {}; // Invalidate cache on batch operation completion
         showToast('Success', 'Selected packages uninstalled', 'success');
     } else {
         showToast('Error', result ? result.error : 'Batch operation failed', 'error');
@@ -447,6 +455,7 @@ cleanupOrphansBtn.addEventListener('click', async () => {
     
     const result = await pyApiCall('batch_uninstall', ids);
     if (result && result.success) {
+        packageCache = {}; // Invalidate cache on orphan cleanup
         showToast('Success', 'Orphaned packages removed successfully', 'success');
         cleanupOrphansBtn.classList.add('hidden');
         fetchPackages();
@@ -637,6 +646,26 @@ async function fetchPackages() {
     const query = searchInput.value.trim();
     const type = typeFilter.value;
 
+    const cacheKey = getCacheKey(currentView, type, query);
+    if (currentView !== 'activity' && currentView !== 'disk' && packageCache[cacheKey] !== undefined) {
+        currentPackages = packageCache[cacheKey];
+        loadingState.classList.add('hidden');
+        packagesGrid.style.display = 'block';
+        if (currentView === 'installed') {
+            checkOrphans();
+        }
+        if (currentView === 'updates') {
+            if (currentPackages.length > 0) {
+                updateAllBtn.classList.remove('hidden');
+            }
+            if (!query) {
+                document.getElementById('updates-badge').textContent = currentPackages.length;
+            }
+        }
+        renderPackages(currentPackages);
+        return;
+    }
+
     let results = [];
     if (query) {
         results = await pyApiCall('search', query, type);
@@ -659,6 +688,10 @@ async function fetchPackages() {
         } else {
             results = await pyApiCall('get_suggestions', type);
         }
+    }
+
+    if (currentView !== 'activity' && currentView !== 'disk') {
+        packageCache[cacheKey] = results || [];
     }
 
     loadingState.classList.add('hidden');
@@ -734,6 +767,7 @@ document.getElementById('import-btn').addEventListener('click', async () => {
     showToast('Importing', 'Reading ~/bauh-manifest.json and installing missing packages...', 'info');
     const result = await pyApiCall('import_packages');
     if (result) {
+        packageCache = {}; // Invalidate cache on manifest import
         const installed = result.installed || 0;
         const skipped = result.skipped || 0;
         const failed = result.failed || [];
@@ -820,6 +854,7 @@ packagesGrid.addEventListener('click', async (e) => {
         if (action === 'pin') {
             const res = await pyApiCall('pin_update', pid);
             if (res && res.success) {
+                packageCache = {}; // Invalidate cache on pin
                 showToast('Pinned', 'Package pinned successfully', 'success');
                 fetchPackages();
             } else {
@@ -828,6 +863,7 @@ packagesGrid.addEventListener('click', async (e) => {
         } else if (action === 'unpin') {
             const res = await pyApiCall('unpin_update', pid);
             if (res && res.success) {
+                packageCache = {}; // Invalidate cache on unpin
                 showToast('Unpinned', 'Package unpinned successfully', 'success');
                 fetchPackages();
             } else {
