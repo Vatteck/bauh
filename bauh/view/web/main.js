@@ -209,16 +209,24 @@ function renderPackages(packages) {
         
         const actionButton = pkg.installed ? 
             (pkg.update_available ? 
-                `<button class="btn btn-primary action-btn" data-action="update" data-id="${pkg.id}">Update</button>` :
-                `<button class="btn btn-danger action-btn" data-action="uninstall" data-id="${pkg.id}">Uninstall</button>`) :
-            `<button class="btn btn-primary action-btn" data-action="install" data-id="${pkg.id}">Install</button>`;
+                `<button class="btn btn-primary action-btn" data-action="update" data-id="${escapeHtml(pkg.id)}">Update</button>` :
+                `<button class="btn btn-danger action-btn" data-action="uninstall" data-id="${escapeHtml(pkg.id)}">Uninstall</button>`) :
+            `<button class="btn btn-primary action-btn" data-action="install" data-id="${escapeHtml(pkg.id)}">Install</button>`;
         
+        const pinButton = (pkg.installed && pkg.supports_pinning) ?
+            `<button class="btn btn-pin ${pkg.update_ignored ? 'pinned' : ''} action-btn"
+                data-action="${pkg.update_ignored ? 'unpin' : 'pin'}"
+                data-id="${escapeHtml(pkg.id)}"
+                title="${pkg.update_ignored ? 'Click to allow updates' : 'Click to hold (pin) this version'}">
+                ${pkg.update_ignored ? '📌 Pinned' : '📌 Pin'}
+             </button>` : '';
+
         const isChecked = selectedPackages.has(pkg.id) ? 'checked' : '';
         
         card.innerHTML = `
             <div class="package-header">
                 <input type="checkbox" class="pkg-checkbox" ${isChecked} onclick="event.stopPropagation();">
-                <img src="${pkg.icon_url || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}" class="package-icon" alt="${escapeHtml(pkg.name)} icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}">
+                <img src="${escapeHtml(pkg.icon_url) || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}" class="package-icon" alt="${escapeHtml(pkg.name)} icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}">
                 <div class="package-info">
                     <h3 class="package-title" title="${escapeHtml(pkg.name)}">${escapeHtml(pkg.name)}</h3>
                     <div class="package-publisher">
@@ -231,9 +239,12 @@ function renderPackages(packages) {
             </div>
             <div class="package-footer">
                 <div class="package-tags">
-                    <span class="tag ${pkg.type.toLowerCase()}">${pkg.type}</span>
+                    <span class="tag ${escapeHtml(pkg.type.toLowerCase())}">${escapeHtml(pkg.type)}</span>
                 </div>
-                ${actionButton}
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    ${pinButton}
+                    ${actionButton}
+                </div>
             </div>
         `;
         
@@ -260,10 +271,9 @@ function renderPackages(packages) {
             }
         });
         
-        // Action Button click handler
-        const btn = card.querySelector('.action-btn');
-        if (btn) {
-            btn.addEventListener('click', (e) => {
+        // Action Buttons click handlers
+        card.querySelectorAll('.action-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const action = btn.dataset.action;
                 const pid = btn.dataset.id;
@@ -275,7 +285,23 @@ function renderPackages(packages) {
                 
                 btn.classList.add('loading');
                 
-                if (action === 'install') {
+                if (action === 'pin') {
+                    const res = await pyApiCall('pin_update', pid);
+                    if (res && res.success) {
+                        showToast('Pinned', 'Package pinned successfully', 'success');
+                        fetchPackages();
+                    } else {
+                        btn.classList.remove('loading');
+                    }
+                } else if (action === 'unpin') {
+                    const res = await pyApiCall('unpin_update', pid);
+                    if (res && res.success) {
+                        showToast('Unpinned', 'Package unpinned successfully', 'success');
+                        fetchPackages();
+                    } else {
+                        btn.classList.remove('loading');
+                    }
+                } else if (action === 'install') {
                     installApp(pid, btn);
                 } else if (action === 'uninstall') {
                     uninstallApp(pid, btn);
@@ -283,7 +309,7 @@ function renderPackages(packages) {
                     updateApp(pid, btn);
                 }
             });
-        }
+        });
         
         packagesGrid.appendChild(card);
     });
@@ -626,14 +652,14 @@ async function renderActivityFeed() {
         const actionLabel = act.action.toUpperCase();
         
         item.innerHTML = `
-            <div class="activity-icon ${iconClass}">${iconChar}</div>
+            <div class="activity-icon ${escapeHtml(iconClass)}">${escapeHtml(iconChar)}</div>
             <div class="activity-body">
-                <span class="activity-action ${act.action}">${actionLabel}</span>
+                <span class="activity-action ${escapeHtml(act.action)}">${escapeHtml(actionLabel)}</span>
                 <span class="activity-pkg">${escapeHtml(act.pkg_name)}</span>
-                <span style="color: var(--text-secondary);">(${act.pkg_type})</span>
+                <span style="color: var(--text-secondary);">(${escapeHtml(act.pkg_type)})</span>
                 ${!isSuccess && act.error ? `<span style="color: var(--status-danger); margin-left: 8px;">— ${escapeHtml(act.error)}</span>` : ''}
             </div>
-            <div class="activity-time">${timeStr}</div>
+            <div class="activity-time">${escapeHtml(timeStr)}</div>
         `;
         feed.appendChild(item);
     });
@@ -825,6 +851,8 @@ const mockApi = {
     update: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 1000)); },
     batch_uninstall: async (ids) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 1500)); },
     update_all: async () => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 2000)); },
+    pin_update: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 500)); },
+    unpin_update: async (id) => { return new Promise(resolve => setTimeout(() => resolve({success: true}), 500)); },
     get_disk_usage: async () => {
         return {
             packages: [

@@ -70,11 +70,39 @@ class BauhApi:
             'can_be_downgraded': pkg.can_be_downgraded() if hasattr(pkg, 'can_be_downgraded') else False,
             'has_info': pkg.has_info() if hasattr(pkg, 'has_info') else False,
             'has_history': pkg.has_history() if hasattr(pkg, 'has_history') else False,
+            'update_ignored': pkg.is_update_ignored() if hasattr(pkg, 'is_update_ignored') else False,
+            'supports_pinning': pkg.supports_ignored_updates() if hasattr(pkg, 'supports_ignored_updates') else False,
         }
 
     def _get_pkg(self, pkg_id: str):
         with self._registry_lock:
             return self.pkg_registry.get(pkg_id)
+
+    def pin_update(self, pkg_id: str) -> dict:
+        pkg = self._get_pkg(pkg_id)
+        if not pkg:
+            return {'status': 'error', 'message': f"Unknown package id: {pkg_id}"}
+        try:
+            self.manager.ignore_update(pkg)
+            self.logger.info(f"Pinned package: {pkg.name}")
+            return {'status': 'ok', 'success': True}
+        except Exception as e:
+            self.logger.error(f"Error pinning package {pkg.name}: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
+    def unpin_update(self, pkg_id: str) -> dict:
+        pkg = self._get_pkg(pkg_id)
+        if not pkg:
+            return {'status': 'error', 'message': f"Unknown package id: {pkg_id}"}
+        try:
+            self.manager.revert_ignored_update(pkg)
+            self.logger.info(f"Unpinned package: {pkg.name}")
+            return {'status': 'ok', 'success': True}
+        except Exception as e:
+            self.logger.error(f"Error unpinning package {pkg.name}: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
 
     def get_suggestions(self, pkg_type: str = 'all') -> dict:
         try:

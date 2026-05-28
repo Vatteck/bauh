@@ -953,4 +953,18 @@ body {
     color: var(--text-primary);
 }
 
+.btn-pin {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 5px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-pin:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+.btn-pin.pinned { background: rgba(245, 158, 11, 0.1); border-color: var(--status-warning); color: var(--status-warning); }
+.btn-pin.pinned:hover { background: var(--status-warning); color: white; }
+
 
