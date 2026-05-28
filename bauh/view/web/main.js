@@ -299,14 +299,28 @@ function renderPackages(packages) {
 // Silently probe remote icon URLs and upgrade from placeholder on success.
 // Uses JS Image() objects which do NOT log 404 errors to console on failure.
 function deferredIconLoad() {
+    if (!window.iconObserver) {
+        window.iconObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    const remoteSrc = img.getAttribute('data-src');
+                    if (remoteSrc) {
+                        const probe = new Image();
+                        probe.onload = () => { img.src = remoteSrc; };
+                        probe.src = remoteSrc;
+                    }
+                    // Stop observing once probed, regardless of success
+                    img.removeAttribute('data-src');
+                    observer.unobserve(img);
+                }
+            });
+        }, { rootMargin: '200px' }); // probe slightly before scrolling into view
+    }
+
     const imgs = packagesGrid.querySelectorAll('img.package-icon[data-src]');
     imgs.forEach(img => {
-        const remoteSrc = img.getAttribute('data-src');
-        if (!remoteSrc) return;
-        const probe = new Image();
-        probe.onload = () => { img.src = remoteSrc; };
-        // On failure: do nothing — placeholder stays, no console error
-        probe.src = remoteSrc;
+        window.iconObserver.observe(img);
     });
 }
 
