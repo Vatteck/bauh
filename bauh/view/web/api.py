@@ -7,6 +7,7 @@ from bauh.commons.view_utils import get_human_size_str
 from bauh.view.core.controller import GenericSoftwareManager
 from bauh.view.web.watcher import WebviewWatcher
 from bauh.view.web.activity_log import record_activity, get_activity_log
+from bauh.view.web.export import write_manifest, read_manifest
 
 
 class BauhApi:
@@ -400,6 +401,112 @@ class BauhApi:
         except Exception as e:
             self.logger.error(f"Error fetching disk usage: {e}")
             traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
+    def export_packages(self) -> dict:
+        try:
+            self.logger.info("export_packages called")
+            result = self.manager.read_installed()
+            pkgs = result.installed or []
+            serialized_packages = [self._serialize_pkg(p) for p in pkgs]
+            path = write_manifest(serialized_packages)
+            return {'status': 'ok', 'data': {'path': path, 'count': len(serialized_packages)}}
+        except Exception as e:
+            self.logger.error(f"Error exporting packages: {e}")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+
+    def import_packages(self) -> dict:
+        try:
+            self.logger.info("import_packages called")
+            manifest_pkgs = read_manifest()
+            
+            installed_res = self.manager.read_installed()
+            installed_pkgs = installed_res.installed or []
+            installed_names_lower = {p.name.lower() for p in installed_pkgs if p.name}
+            
+            to_install = []
+            skipped_count = 0
+            for p in manifest_pkgs:
+                name = p.get('name')
+                if not name:
+                    continue
+                if name.lower() in installed_names_lower:
+                    skipped_count += 1
+                else:
+                    to_install.append(p)
+                    
+            if not to_install:
+                return {
+                    'status': 'ok',
+                    'data': {
+                        'installed': 0,
+                        'skipped': skipped_count,
+                        'failed': []
+                    }
+                }
+                
+            if self.window:
+                self.window.evaluate_js(f"terminalOpen('Importing {len(to_install)} packages from manifest...')")
+                
+            watcher = WebviewWatcher(self.logger, self.window)
+            installed_count = 0
+            failed_list = []
+            
+            for p in to_install:
+                name = p.get('name')
+                pkg_type = p.get('type', 'unknown')
+                search_res = self.manager.search(words=name)
+                
+                match = None
+                if search_res:
+                    candidates = (search_res.installed or []) + (search_res.new or [])
+                    for candidate in candidates:
+                        if candidate.name and candidate.name.lower() == name.lower():
+                            match = candidate
+                            break
+                            
+                if match:
+                    try:
+                        self.logger.info(f"Import installing: {match.name}")
+                        install_res = self.manager.install(match, root_password=None, disk_loader=None, handler=watcher)
+                        success = install_res.success if install_res else False
+                        if success:
+                            installed_count += 1
+                            try:
+                                t = match.get_type() or match.gem_name
+                            except Exception:
+                                t = getattr(match, 'gem_name', 'unknown')
+                            record_activity('install', match.name, t, True)
+                        else:
+                            failed_list.append(name)
+                            try:
+                                t = match.get_type() or match.gem_name
+                            except Exception:
+                                t = getattr(match, 'gem_name', 'unknown')
+                            record_activity('install', name, t, False, 'import failed')
+                    except Exception as e:
+                        failed_list.append(name)
+                        record_activity('install', name, pkg_type, False, f'import failed: {e}')
+                else:
+                    failed_list.append(name)
+                    
+            if self.window:
+                self.window.evaluate_js("terminalSetDone(true)")
+                
+            return {
+                'status': 'ok',
+                'data': {
+                    'installed': installed_count,
+                    'skipped': skipped_count,
+                    'failed': failed_list
+                }
+            }
+        except Exception as e:
+            self.logger.error(f"Error importing packages: {e}")
+            traceback.print_exc()
+            if self.window:
+                self.window.evaluate_js("terminalSetDone(false)")
             return {'status': 'error', 'message': str(e)}
 
 

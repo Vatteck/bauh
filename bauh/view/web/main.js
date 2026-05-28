@@ -767,6 +767,27 @@ typeFilter.addEventListener('change', () => {
     fetchPackages();
 });
 
+// Export / Import Manifest listeners
+document.getElementById('export-btn').addEventListener('click', async () => {
+    showToast('Exporting', 'Writing manifest...', 'info');
+    const result = await pyApiCall('export_packages');
+    if (result) {
+        showToast('Exported', `${result.count} packages saved to ${result.path}`, 'success');
+    }
+});
+
+document.getElementById('import-btn').addEventListener('click', async () => {
+    showToast('Importing', 'Reading ~/bauh-manifest.json and installing missing packages...', 'info');
+    const result = await pyApiCall('import_packages');
+    if (result) {
+        const installed = result.installed || 0;
+        const skipped = result.skipped || 0;
+        const failed = result.failed || [];
+        showToast('Import Complete', "Installed: " + installed + " | Skipped (already present): " + skipped + " | Failed: " + failed.length, failed.length > 0 ? 'error' : 'success');
+        fetchPackages();
+    }
+});
+
 navItems.forEach(item => {
     item.addEventListener('click', (e) => {
         const btn = e.currentTarget;
@@ -866,6 +887,19 @@ const mockApi = {
                 { type: 'Snap', total_bytes: 180000000, total_human: '180.00 MB' },
                 { type: 'AUR', total_bytes: 120000000, total_human: '120.00 MB' }
             ]
+        };
+    },
+    export_packages: async () => {
+        return {
+            path: '~/bauh-manifest.json',
+            count: 3
+        };
+    },
+    import_packages: async () => {
+        return {
+            installed: 1,
+            skipped: 2,
+            failed: []
         };
     }
 };
