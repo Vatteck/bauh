@@ -99,6 +99,22 @@ let selectMode = false;
 let selectedPackages = new Set();
 let operationInProgress = false;
 
+let packageCache = {};
+
+function getCacheKey(view, type, query) {
+    return `${view}\0${type}\0${query}`;
+}
+
+const MAX_CACHE_ENTRIES = 30;
+function writeToCache(key, data) {
+    const keys = Object.keys(packageCache);
+    if (keys.length >= MAX_CACHE_ENTRIES) {
+        delete packageCache[keys[0]]; // FIFO eviction
+    }
+    packageCache[key] = data;
+}
+
+
 // Function to call Python backend methods
 async function pyApiCall(methodName, ...args) {
     if (window.pywebview && window.pywebview.api) {
@@ -170,6 +186,7 @@ window.terminalSetProgress = (val) => {
 
 window.terminalSetDone = (success) => {
     operationInProgress = false;
+    packageCache = {}; // Invalidate cache on terminal operation completion
     const doneMsg = document.getElementById('terminal-done-msg');
     doneMsg.className = success ? 'terminal-done-success' : 'terminal-done-error';
     doneMsg.textContent = success ? '✓ Operation completed successfully.' : '✗ Operation failed.';
@@ -188,6 +205,16 @@ document.getElementById('terminal-close').addEventListener('click', () => {
     document.getElementById('terminal-overlay').classList.add('hidden');
     fetchPackages(); // refresh packages list
 });
+
+// Helper to sanitize package icon URL and avoid browser 404 errors for invalid filenames/relative paths
+function getIconUrl(iconUrl) {
+    if (!iconUrl) return '';
+    // If it's a raw filename without directory separator and not base64 data, it's invalid and will fail
+    if (!iconUrl.includes('/') && !iconUrl.startsWith('data:')) {
+        return '';
+    }
+    return iconUrl;
+}
 
 // Render Package Cards
 function renderPackages(packages) {
@@ -229,7 +256,7 @@ function renderPackages(packages) {
         card.innerHTML = `
             <div class="package-header">
                 <input type="checkbox" class="pkg-checkbox" ${isChecked} onclick="event.stopPropagation();">
-                <img src="${escapeHtml(pkg.icon_url) || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}" class="package-icon" alt="${escapeHtml(pkg.name)} icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>'}">
+                <img src="${escapeHtml(getIconUrl(pkg.icon_url)) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg=='}" class="package-icon" alt="${escapeHtml(pkg.name)} icon" loading="lazy" decoding="async" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg==';">
                 <div class="package-info">
                     <h3 class="package-title" title="${escapeHtml(pkg.name)}">${escapeHtml(pkg.name)}</h3>
                     <div class="package-publisher">
@@ -260,9 +287,10 @@ function renderPackages(packages) {
 
 // Package Detail Modal View
 function openDetailModal(pkg) {
-    document.getElementById('detail-icon').src = pkg.icon_url || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>';
+    document.getElementById('detail-icon').src = getIconUrl(pkg.icon_url) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg==';
     document.getElementById('detail-icon').onerror = function() {
-        this.src = 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' fill=\'%2364748b\' viewBox=\'0 0 24 24\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\' ry=\'2\'></rect></svg>';
+        this.onerror = null;
+        this.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0iIzY0NzQ4YiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0Pjwvc3ZnPg==';
     };
     document.getElementById('detail-name').textContent = pkg.name;
     document.getElementById('detail-meta').textContent = `${pkg.type} • v${pkg.version || 'Unknown'}`;
@@ -386,6 +414,7 @@ batchUninstallBtn.addEventListener('click', async () => {
     
     const result = await pyApiCall('batch_uninstall', ids);
     if (result && result.success) {
+        packageCache = {}; // Invalidate cache on batch operation completion
         showToast('Success', 'Selected packages uninstalled', 'success');
     } else {
         showToast('Error', result ? result.error : 'Batch operation failed', 'error');
@@ -436,6 +465,7 @@ cleanupOrphansBtn.addEventListener('click', async () => {
     
     const result = await pyApiCall('batch_uninstall', ids);
     if (result && result.success) {
+        packageCache = {}; // Invalidate cache on orphan cleanup
         showToast('Success', 'Orphaned packages removed successfully', 'success');
         cleanupOrphansBtn.classList.add('hidden');
         fetchPackages();
@@ -626,6 +656,26 @@ async function fetchPackages() {
     const query = searchInput.value.trim();
     const type = typeFilter.value;
 
+    const cacheKey = getCacheKey(currentView, type, query);
+    if (currentView !== 'activity' && currentView !== 'disk' && packageCache[cacheKey] !== undefined) {
+        currentPackages = packageCache[cacheKey];
+        loadingState.classList.add('hidden');
+        packagesGrid.style.display = 'block';
+        if (currentView === 'installed') {
+            checkOrphans();
+        }
+        if (currentView === 'updates') {
+            if (currentPackages.length > 0) {
+                updateAllBtn.classList.remove('hidden');
+            }
+            if (!query) {
+                document.getElementById('updates-badge').textContent = currentPackages.length;
+            }
+        }
+        renderPackages(currentPackages);
+        return;
+    }
+
     let results = [];
     if (query) {
         results = await pyApiCall('search', query, type);
@@ -650,6 +700,10 @@ async function fetchPackages() {
         }
     }
 
+    if (currentView !== 'activity' && currentView !== 'disk') {
+        writeToCache(cacheKey, results || []);
+    }
+
     loadingState.classList.add('hidden');
     currentPackages = results || [];
     renderPackages(currentPackages);
@@ -663,36 +717,60 @@ async function fetchPackages() {
 // Action Handlers
 window.installApp = async (id, btn = null) => {
     if (btn) btn.classList.add('loading');
+    operationInProgress = true; // Synch lock
     showToast('Installing', 'Installation started in background', 'info');
-    const result = await pyApiCall('install', id);
-    if (result && result.success) {
-        showToast('Success', 'Application installed successfully', 'success');
-    } else {
-        showToast('Error', result ? result.error : 'Installation failed', 'error');
+    try {
+        const result = await pyApiCall('install', id);
+        if (result && result.success) {
+            showToast('Success', 'Application installed successfully', 'success');
+            packageCache = {}; // Wipe cache
+        } else {
+            operationInProgress = false; // Release lock on immediate failure
+            showToast('Error', result ? result.error : 'Installation failed', 'error');
+            if (btn) btn.classList.remove('loading');
+        }
+    } catch (err) {
+        operationInProgress = false;
         if (btn) btn.classList.remove('loading');
     }
 };
 
 window.uninstallApp = async (id, btn = null) => {
     if (btn) btn.classList.add('loading');
+    operationInProgress = true; // Synch lock
     showToast('Uninstalling', 'Uninstallation started', 'info');
-    const result = await pyApiCall('uninstall', id);
-    if (result && result.success) {
-        showToast('Success', 'Application uninstalled', 'success');
-    } else {
-        showToast('Error', result ? result.error : 'Uninstallation failed', 'error');
+    try {
+        const result = await pyApiCall('uninstall', id);
+        if (result && result.success) {
+            showToast('Success', 'Application uninstalled', 'success');
+            packageCache = {}; // Wipe cache
+        } else {
+            operationInProgress = false; // Release lock on immediate failure
+            showToast('Error', result ? result.error : 'Uninstallation failed', 'error');
+            if (btn) btn.classList.remove('loading');
+        }
+    } catch (err) {
+        operationInProgress = false;
         if (btn) btn.classList.remove('loading');
     }
 };
 
 window.updateApp = async (id, btn = null) => {
     if (btn) btn.classList.add('loading');
+    operationInProgress = true; // Synch lock
     showToast('Updating', 'Update started', 'info');
-    const result = await pyApiCall('update', id);
-    if (result && result.success) {
-        showToast('Success', 'Application updated', 'success');
-    } else {
-        showToast('Error', result ? result.error : 'Update failed', 'error');
+    try {
+        const result = await pyApiCall('update', id);
+        if (result && result.success) {
+            showToast('Success', 'Application updated', 'success');
+            packageCache = {}; // Wipe cache
+        } else {
+            operationInProgress = false; // Release lock on immediate failure
+            showToast('Error', result ? result.error : 'Update failed', 'error');
+            if (btn) btn.classList.remove('loading');
+        }
+    } catch (err) {
+        operationInProgress = false;
         if (btn) btn.classList.remove('loading');
     }
 };
@@ -723,6 +801,7 @@ document.getElementById('import-btn').addEventListener('click', async () => {
     showToast('Importing', 'Reading ~/bauh-manifest.json and installing missing packages...', 'info');
     const result = await pyApiCall('import_packages');
     if (result) {
+        packageCache = {}; // Invalidate cache on manifest import
         const installed = result.installed || 0;
         const skipped = result.skipped || 0;
         const failed = result.failed || [];
@@ -730,6 +809,19 @@ document.getElementById('import-btn').addEventListener('click', async () => {
         fetchPackages();
     }
 });
+
+const refreshBtn = document.getElementById('refresh-btn');
+if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+        if (operationInProgress) {
+            showToast('Busy', 'Another operation is already running', 'warning');
+            return;
+        }
+        packageCache = {}; // Wipe cache completely for a hard reload
+        searchInput.value = ''; // Reset query
+        fetchPackages();
+    });
+}
 
 function activateView(viewName) {
     navItems.forEach(n => n.classList.remove('active'));
@@ -804,19 +896,25 @@ packagesGrid.addEventListener('click', async (e) => {
             return;
         }
         
-        actionBtn.classList.add('loading');
-        
         if (action === 'pin') {
+            operationInProgress = true;
+            actionBtn.classList.add('loading');
             const res = await pyApiCall('pin_update', pid);
+            operationInProgress = false; // Reset lock
             if (res && res.success) {
+                packageCache = {};
                 showToast('Pinned', 'Package pinned successfully', 'success');
                 fetchPackages();
             } else {
                 actionBtn.classList.remove('loading');
             }
         } else if (action === 'unpin') {
+            operationInProgress = true;
+            actionBtn.classList.add('loading');
             const res = await pyApiCall('unpin_update', pid);
+            operationInProgress = false; // Reset lock
             if (res && res.success) {
+                packageCache = {};
                 showToast('Unpinned', 'Package unpinned successfully', 'success');
                 fetchPackages();
             } else {
