@@ -172,7 +172,7 @@ class BauhApiExportImportTest(unittest.TestCase):
 
     @patch('atlas.view.webview.api.write_manifest')
     def test_export_packages_success(self, mock_write):
-        mock_write.return_value = "/home/user/bauh-manifest.json"
+        mock_write.return_value = "/home/user/atlas-manifest.json"
         
         pkg = Mock()
         pkg.name = "test-pkg"
@@ -195,7 +195,7 @@ class BauhApiExportImportTest(unittest.TestCase):
         res = self.api.export_packages()
         self.assertEqual(res['status'], 'ok')
         self.assertEqual(res['data']['count'], 1)
-        self.assertEqual(res['data']['path'], "/home/user/bauh-manifest.json")
+        self.assertEqual(res['data']['path'], "/home/user/atlas-manifest.json")
         mock_write.assert_called_once()
 
     @patch('atlas.view.webview.api.read_manifest')

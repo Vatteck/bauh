@@ -4,7 +4,7 @@ import datetime
 import threading
 from typing import List
 
-LOG_FILE = os.path.expanduser('~/.cache/bauh/activity.jsonl')
+LOG_FILE = os.path.expanduser('~/.cache/atlaspm/activity.jsonl')
 _log_lock = threading.Lock()
 
 def record_activity(action: str, pkg_name: str, pkg_type: str, success: bool, error: str = None):

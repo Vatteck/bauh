@@ -2,7 +2,7 @@ import os
 import json
 import datetime
 
-MANIFEST_PATH = os.path.expanduser('~/bauh-manifest.json')
+MANIFEST_PATH = os.path.expanduser('~/atlas-manifest.json')
 
 def write_manifest(packages: list) -> str:
     manifest = {

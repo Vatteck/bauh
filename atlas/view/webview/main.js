@@ -14,7 +14,7 @@ const themeToggleBtn = document.getElementById('theme-toggle');
 const rootElement = document.documentElement;
 
 // Initialize theme from localStorage or default to dark
-const savedTheme = localStorage.getItem('bauh-theme') || 'dark';
+const savedTheme = localStorage.getItem('atlas-theme') || 'dark';
 rootElement.setAttribute('data-theme', savedTheme);
 
 themeToggleBtn.addEventListener('click', () => {
@@ -22,7 +22,7 @@ themeToggleBtn.addEventListener('click', () => {
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
     
     rootElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('bauh-theme', newTheme);
+    localStorage.setItem('atlas-theme', newTheme);
 });
 
 // HTML escaping helper to prevent XSS / Local RCE
@@ -844,7 +844,7 @@ document.getElementById('export-btn').addEventListener('click', async () => {
 });
 
 document.getElementById('import-btn').addEventListener('click', async () => {
-    showToast('Importing', 'Reading ~/bauh-manifest.json and installing missing packages...', 'info');
+    showToast('Importing', 'Reading ~/atlas-manifest.json and installing missing packages...', 'info');
     const result = await pyApiCall('import_packages');
     if (result) {
         packageCache = {}; // Invalidate cache on manifest import
@@ -1064,7 +1064,7 @@ const mockApi = {
     },
     export_packages: async () => {
         return {
-            path: '~/bauh-manifest.json',
+            path: '~/atlas-manifest.json',
             count: 3
         };
     },
