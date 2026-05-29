@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from bauh.commons.util import size_to_byte, sanitize_command_input
+from atlas.commons.util import size_to_byte, sanitize_command_input
 
 
 class SizeToByteTest(TestCase):

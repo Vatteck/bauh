@@ -1,11 +1,11 @@
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from bauh import __app_name__
-from bauh.commons import system
-from bauh.commons.system import USE_GLOBAL_INTERPRETER
-from bauh.gems.debian.aptitude import Aptitude, map_package_name
-from bauh.gems.debian.model import DebianPackage
+from atlas import __app_name__
+from atlas.commons import system
+from atlas.commons.system import USE_GLOBAL_INTERPRETER
+from atlas.gems.debian.aptitude import Aptitude, map_package_name
+from atlas.gems.debian.model import DebianPackage
 
 
 class MapPackageNameTest(TestCase):

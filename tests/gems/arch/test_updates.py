@@ -1,12 +1,12 @@
 from unittest import TestCase
 from unittest.mock import patch, Mock, MagicMock
 
-from bauh import __app_name__
-from bauh.api.abstract.controller import UpgradeRequirement
-from bauh.gems.arch.dependencies import DependenciesAnalyser
-from bauh.gems.arch.model import ArchPackage
-from bauh.gems.arch.updates import UpdatesSummarizer
-from bauh.view.util.translation import I18n
+from atlas import __app_name__
+from atlas.api.abstract.controller import UpgradeRequirement
+from atlas.gems.arch.dependencies import DependenciesAnalyser
+from atlas.gems.arch.model import ArchPackage
+from atlas.gems.arch.updates import UpdatesSummarizer
+from atlas.view.util.translation import I18n
 
 
 class UpdatesSummarizerGetUpgradeRequirementsTest(TestCase):

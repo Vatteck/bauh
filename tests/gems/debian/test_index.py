@@ -3,9 +3,9 @@ import os.path
 from unittest import TestCase
 from unittest.mock import Mock, patch, call
 
-from bauh import __app_name__
-from bauh.gems.debian.index import ApplicationsMapper, ApplicationIndexer
-from bauh.gems.debian.model import DebianApplication
+from atlas import __app_name__
+from atlas.gems.debian.index import ApplicationsMapper, ApplicationIndexer
+from atlas.gems.debian.model import DebianApplication
 from tests.gems.debian import DEBIAN_TESTS_DIR
 
 

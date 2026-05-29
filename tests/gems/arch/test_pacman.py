@@ -3,8 +3,8 @@ import warnings
 from unittest import TestCase
 from unittest.mock import patch, Mock
 
-from bauh import __app_name__
-from bauh.gems.arch import pacman
+from atlas import __app_name__
+from atlas.gems.arch import pacman
 
 FILE_DIR = os.path.dirname(os.path.abspath(__file__))
 

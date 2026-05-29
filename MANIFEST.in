@@ -1,11 +1,11 @@
 include LICENSE CHANGELOG.md README.md requirements.txt
-recursive-include bauh/desktop *
-recursive-exclude bauh/desktop *.orig
-recursive-include bauh/view/resources *
-recursive-include bauh/view/web *
-recursive-exclude bauh/view/resources *.orig
-recursive-include bauh/gems/*/resources *
-recursive-exclude bauh/gems/*/resources *.orig
+recursive-include atlas/desktop *
+recursive-exclude atlas/desktop *.orig
+recursive-include atlas/view/resources *
+recursive-include atlas/view/webview *
+recursive-exclude atlas/view/resources *.orig
+recursive-include atlas/gems/*/resources *
+recursive-exclude atlas/gems/*/resources *.orig
 recursive-exclude linux_dist *
 recursive-exclude venv *
 recursive-exclude .venv *

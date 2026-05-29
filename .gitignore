@@ -16,5 +16,5 @@ linux_dist/appimage/*.zsync
 linux_dist/appimage/*.AppImage
 linux_dist/appimage/*.gz
 linux_dist/appimage/*.gz.*
-linux_dist/appimage/bauh-*
+linux_dist/appimage/atlas-*
 

@@ -1,8 +1,8 @@
 from unittest import TestCase
 from unittest.mock import patch, Mock
 
-from bauh import __app_name__
-from bauh.gems.flatpak import flatpak, VERSION_1_2
+from atlas import __app_name__
+from atlas.gems.flatpak import flatpak, VERSION_1_2
 
 
 class FlatpakTest(TestCase):

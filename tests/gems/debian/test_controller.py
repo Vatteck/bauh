@@ -1,10 +1,10 @@
 from unittest import TestCase
 from unittest.mock import MagicMock, patch, Mock
 
-from bauh import __app_name__
-from bauh.api.abstract.controller import SearchResult
-from bauh.gems.debian.controller import DebianPackageManager
-from bauh.gems.debian.model import DebianPackage, DebianApplication
+from atlas import __app_name__
+from atlas.api.abstract.controller import SearchResult
+from atlas.gems.debian.controller import DebianPackageManager
+from atlas.gems.debian.model import DebianPackage, DebianApplication
 
 
 class DebianPackageManagerTest(TestCase):

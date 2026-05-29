@@ -1,8 +1,8 @@
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from bauh.gems.web.controller import DEFAULT_LANGUAGE_HEADER
-from bauh.gems.web.controller import WebApplicationManager
+from atlas.gems.web.controller import DEFAULT_LANGUAGE_HEADER
+from atlas.gems.web.controller import WebApplicationManager
 
 
 class ControllerTest(TestCase):
