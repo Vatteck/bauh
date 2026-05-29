@@ -1,6 +1,7 @@
 import logging
 import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 
 from atlas.commons.view_utils import get_human_size_str
@@ -19,9 +20,9 @@ class BauhApi:
         self._registry_lock = threading.Lock()
         self.window = None
         
-        # Prepare the managers in a background thread to prevent GUI lockup
-        self._prepare_thread = threading.Thread(target=self._prepare_manager, daemon=True)
-        self._prepare_thread.start()
+        # Prepare the managers in a background thread to prevent GUI lockup using ThreadPoolExecutor
+        self._executor = ThreadPoolExecutor(max_workers=5)
+        self._prepare_future = self._executor.submit(self._prepare_manager)
 
     def set_window(self, window):
         self.window = window

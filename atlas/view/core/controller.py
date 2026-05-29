@@ -2,7 +2,7 @@ import shutil
 import time
 import traceback
 from subprocess import Popen, STDOUT
-from threading import Thread
+from threading import Thread, Lock
 from typing import List, Set, Type, Tuple, Dict, Optional, Generator, Callable
 
 from atlas.api.abstract.controller import SoftwareManager, SearchResult, ApplicationContext, UpgradeRequirements, \
@@ -49,6 +49,8 @@ class GenericSoftwareManager(SoftwareManager, SettingsController):
         self.disk_loader_factory = context.disk_loader_factory
         self.logger = context.logger
         self._already_prepared = []
+        self._prepare_lock = Lock()
+        self._managers_prepared_locks = {}
         self.working_managers = []
         self.config = config
         self.settings_manager: Optional[GenericSettingsManager] = None
@@ -116,7 +118,26 @@ class GenericSoftwareManager(SoftwareManager, SettingsController):
                                  type_=MessageType.ERROR)
             return False
 
+    def _ensure_prepared(self, man: SoftwareManager):
+        if man in self._already_prepared:
+            return
+
+        with self._prepare_lock:
+            if man not in self._managers_prepared_locks:
+                self._managers_prepared_locks[man] = Lock()
+            lock = self._managers_prepared_locks[man]
+
+        with lock:
+            if man not in self._already_prepared:
+                self.logger.info(f"Lazily preparing manager: {man.__class__.__name__}")
+                taskman = getattr(self, '_prepare_taskman', None) or TaskManager()
+                root_password = getattr(self, '_prepare_root_password', None)
+                internet_on = self.context.is_internet_available()
+                man.prepare(taskman, root_password, internet_on)
+                self._already_prepared.append(man)
+
     def _can_work(self, man: SoftwareManager):
+        self._ensure_prepared(man)
         if self._available_cache is not None:
             available = False
             for t in man.get_managed_types():
@@ -425,24 +446,13 @@ class GenericSoftwareManager(SoftwareManager, SettingsController):
         ti = time.time()
         self.logger.info("Initializing")
         taskman = task_manager if task_manager else TaskManager()  # empty task manager to prevent null pointers
+        self._prepare_taskman = taskman
+        self._prepare_root_password = root_password
+        self._prepare_internet_available = internet_available
 
         create_config = CreateConfigFile(taskman=taskman, configman=self.configman, i18n=self.i18n,
                                          task_icon_path=get_path('img/logo.svg'), logger=self.logger)
         create_config.start()
-
-        if self.managers:
-            internet_on = self.context.is_internet_available()
-            prepare_tasks = []
-            for man in self.managers:
-                if man not in self._already_prepared and self._can_work(man):
-                    t = Thread(target=man.prepare, args=(taskman, root_password, internet_on), daemon=True)
-                    t.start()
-                    prepare_tasks.append(t)
-                    self._already_prepared.append(man)
-
-            for t in prepare_tasks:
-                t.join()
-
         create_config.join()
         tf = time.time()
         self.logger.info(f'Finished ({tf - ti:.2f} seconds)')
